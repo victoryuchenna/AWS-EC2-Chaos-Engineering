@@ -1,6 +1,6 @@
 # Chaos Engineering for Resources in an AZ
 ## Introduction
-the following workshop will walk you through the process of creating a chaos experiment to test your resources in a given Availability Zone. We will explore some of the way an AZ can fail an test the resiliency of your architecture. 
+The following workshop will walk you through the process of creating a chaos experiment to test your resources in a given Availability Zone. We will explore some of the way an AZ can fail an test the resiliency of your architecture. 
 
 ## Goals:
 
