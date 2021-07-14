@@ -1,7 +1,6 @@
-# AWS-FIS-Workshop
+# Chaos Engineering for Resources in an AZ
 ## Introduction
-The following workshop will walk you through the process of running fault injection experiments on AWS services using [AWS FIS](https://aws.amazon.com/fis/)
-You will learn how to inject failure at the EC2 OS Level, then at the network and managed service level.
+the following workshop will walk you through the process of creating a chaos experiment to test your resources in a given Availability Zone. We will explore some of the way an AZ can fail an test the resiliency of your architecture. 
 
 ## Goals:
 
