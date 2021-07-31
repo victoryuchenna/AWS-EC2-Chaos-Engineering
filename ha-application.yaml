@@ -1,0 +1,519 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: >-
+  AWS CloudFormation Template WAMP_Multi_AZ: Create a highly available,
+  scalable WAMP stack with an Amazon RDS database instance for the backend data
+  store. This template demonstrates using the AWS CloudFormation bootstrap
+  scripts to install the packages and files necessary to deploy the Apache web
+  server and PHP at instance launch time. **WARNING** This template creates one
+  or more Amazon EC2 instances, an Application Load Balancer and an Amazon RDS
+  DB instance. You will be billed for the AWS resources used if you create a
+  stack from this template.
+
+Parameters:
+  VPCCidrBlock:
+    Description: VPC CidrIp
+    Type: String
+    Default: 10.0.0.0/16
+
+  PublicCidrBlock1:
+    Description: 'IGW Routed Subnet CIDR for AZ 1, default Range 10.0.0.1 - 10.0.15.254'
+    Type: String
+    Default: 10.0.0.0/20
+
+  PublicCidrBlock2:
+    Description: 'IGW Routed Subnet CIDR for AZ 2, default Range 10.0.16.1 - 10.0.31.254'
+    Type: String
+    Default: 10.0.16.0/20
+
+  PublicCidrBlock3:
+    Description: 'IGW Routed Subnet CIDR for AZ 3, default Range 10.0.32.1 - 10.0.47.254'
+    Type: String
+    Default: 10.0.32.0/20
+
+  PrivateCidrBlock1:
+    Description: 'Private Subnet CIDR for AZ 1, default Range 10.0.48.1 - 10.0.63.254'
+    Type: String
+    Default: 10.0.48.0/20
+
+  PrivateCidrBlock2:
+    Description: 'Private Subnet CIDR for AZ 2, default Range 10.0.64.1 - 10.0.79.254'
+    Type: String
+    Default: 10.0.64.0/20
+
+  PrivateCidrBlock3:
+    Description: 'Private Subnet CIDR for AZ 3, default Range 10.0.80.1 - 10.0.95.254'
+    Type: String
+    Default: 10.0.80.0/20
+
+  DBName:
+    Default: WebappDatabase
+    Description: MySQL database name
+    Type: String
+    MinLength: '1'
+    MaxLength: '64'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+
+  DBUser:
+    Default: DbAdmin
+    NoEcho: 'true'
+    Description: Username for MySQL database access
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+
+  DBPassword:
+    Default: DbPassword
+    NoEcho: 'true'
+    Description: Password for MySQL database access
+    Type: String
+    MinLength: '8'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: must contain only alphanumeric characters.
+
+  DBAllocatedStorage:
+    Default: '5'
+    Description: The size of the database (Gb)
+    Type: Number
+    MinValue: '5'
+    MaxValue: '1024'
+    ConstraintDescription: must be between 5 and 1024Gb.
+
+  DBInstanceClass:
+    Description: The database instance type
+    Type: String
+    Default: db.t2.small
+    AllowedValues:
+      - db.m4.large
+      - db.r3.large
+      - db.t2.micro
+      - db.t2.small
+      - db.t2.medium
+      - db.t2.large
+      - db.t3.small
+    ConstraintDescription: must select a valid database instance type.
+
+  MultiAZDatabase:
+    Default: 'true'
+    Description: Create a Multi-AZ MySQL Amazon RDS database instance
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    ConstraintDescription: must be either true or false.
+
+  WebServerCapacity:
+    Default: '3'
+    Description: The initial number of WebServer instances
+    Type: Number
+    MinValue: '1'
+    MaxValue: '5'
+    ConstraintDescription: must be between 1 and 5 EC2 instances.
+
+  InstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t3.large
+    AllowedValues:
+      - t2.large
+      - t3.large
+      - m4.large
+    ConstraintDescription: must be a valid EC2 instance type.
+
+Resources:
+  VPC:
+    Metadata:
+      License: >-
+        MIT No Attribution:  Permission is hereby granted, free of charge, to
+        any person obtaining a copy of this software and associated
+        documentation files (the "Software"), to deal in the Software without
+        restriction, including without limitation the rights to use, copy,
+        modify, merge, publish, distribute, sublicense, and/or sell copies of
+        the Software, and to permit persons to whom the Software is furnished to
+        do so.  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+        EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+        MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+        IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+        CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+        TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+        SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VPCCidrBlock
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: ApplicationIGW
+
+  AttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Sub '${AWS::Region}a'
+      CidrBlock: !Ref PublicCidrBlock1
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC-PublicSubnet1
+
+  PublicSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Sub '${AWS::Region}b'
+      CidrBlock: !Ref PublicCidrBlock2
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC-PublicSubnet2
+
+  PublicSubnet3:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Sub '${AWS::Region}c'
+      CidrBlock: !Ref PublicCidrBlock3
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC-PublicSubnet3
+
+  IGWRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC-IGWRoute
+
+  IGWRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref IGWRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref IGWRouteTable
+
+  PublicSubnetRouteTableAssociation2:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref IGWRouteTable
+
+  PublicSubnetRouteTableAssociation3:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet3
+      RouteTableId: !Ref IGWRouteTable
+
+  PrivateSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Sub '${AWS::Region}a'
+      CidrBlock: !Ref PrivateCidrBlock1
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC-PrivateSubnet1
+
+  PrivateSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Sub '${AWS::Region}b'
+      CidrBlock: !Ref PrivateCidrBlock2
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC-PrivateSubnet2
+
+  PrivateSubnet3:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Sub '${AWS::Region}c'
+      CidrBlock: !Ref PrivateCidrBlock3
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC-PrivateSubnet3
+
+  NAT1EIP:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+
+  NAT2EIP:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+
+  NAT3EIP:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+
+  NATGW1:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt 
+        - NAT1EIP
+        - AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC-PrivateSubnetNAT1
+
+  NATGW2:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt 
+        - NAT2EIP
+        - AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC-PrivateSubnetNAT2
+
+  NATGW3:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt 
+        - NAT3EIP
+        - AllocationId
+      SubnetId: !Ref PublicSubnet3
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC-PrivateSubnetNAT3
+
+  PrivateRouteTable1:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC-PrivateSubnetRoute1
+
+  NAT1Route:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGW1
+
+  PrivateRouteTable2:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC-PrivateSubnetRoute2
+
+  NAT2Route:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGW2
+
+  PrivateRouteTable3:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: ApplicationVPC-PrivateSubnetRoute3
+
+  NAT3Route:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable3
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGW3
+
+  PrivateSubnetRouteTableAssociation1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PrivateSubnetRouteTableAssociation2:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable2
+
+  PrivateSubnetRouteTableAssociation3:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet3
+      RouteTableId: !Ref PrivateRouteTable3
+
+  ApplicationLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Subnets: 
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !Ref PublicSubnet3
+
+  ALBListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: '80'
+      Protocol: HTTP
+
+  ALBTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref VPC
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: 'true'
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: '30'
+  SSMIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  WebServerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref SSMIAMRole
+
+  WebServerGroup:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: '1'
+      MaxSize: '5'
+      DesiredCapacity: !Ref WebServerCapacity
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT5M
+        Count: !Ref WebServerCapacity
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: '1'
+        MaxBatchSize: '1'
+        PauseTime: PT15M
+        WaitOnResourceSignals: 'true'
+
+  LaunchConfig:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Metadata:
+      Comment1: Configure the bootstrap helpers to install the Apache Web Server and PHP
+    Properties:
+      ImageId: '{{resolve:ssm:/aws/service/ami-windows-latest/Windows_Server-2016-English-Full-Base}}'
+      InstanceType: !Ref InstanceType
+      SecurityGroups:
+        - !Ref WebServerSecurityGroup
+      IamInstanceProfile: !Ref WebServerInstanceProfile
+
+  WebServerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable HTTP access via port 80 locked down to the ELB and SSH access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          SourceSecurityGroupId: !Select 
+            - 0
+            - !GetAtt 
+              - ApplicationLoadBalancer
+              - SecurityGroups
+      VpcId: !Ref VPC
+
+  DBEC2SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Open database for access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3306'
+          ToPort: '3306'
+          SourceSecurityGroupId: !Ref WebServerSecurityGroup
+      VpcId: !Ref VPC
+
+  MySQLDatabase:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      Engine: MySQL
+      DBName: !Ref DBName
+      MultiAZ: !Ref MultiAZDatabase
+      DBSubnetGroupName: !Ref MySQLDBSubnetGroup
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      VPCSecurityGroups:
+        - !GetAtt 
+          - DBEC2SecurityGroup
+          - GroupId
+
+  MySQLDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties: 
+      DBSubnetGroupDescription: Subnets for application DB
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+
+
+Outputs:
+  WebsiteURL:
+    Description: URL for newly created LAMP stack
+    Value: !Join 
+      - ''
+      - - 'http://'
+        - !GetAtt 
+          - ApplicationLoadBalancer
+          - DNSName
