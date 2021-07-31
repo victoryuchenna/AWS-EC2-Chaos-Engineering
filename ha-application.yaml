@@ -400,6 +400,7 @@ Resources:
           Value: lb_cookie
         - Key: stickiness.lb_cookie.duration_seconds
           Value: '30'
+
   SSMIAMRole:
     Type: AWS::IAM::Role
     Properties:
@@ -455,6 +456,14 @@ Resources:
       SecurityGroups:
         - !Ref WebServerSecurityGroup
       IamInstanceProfile: !Ref WebServerInstanceProfile
+      # https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-local-programming-environment-on-windows-10
+      UserData: |
+        <powershell>
+        iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1'))
+        choco install python -y
+        (new-object net.webclient).DownloadFile('https://s3.amazonaws.com/aws-cli/AWSCLI64.msi','c:\AWSCLI64.msi')
+        msiexec.exe /i 'C:\AWSCLI64.msi' /qn
+        </powershell>
 
   WebServerSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
@@ -470,6 +479,54 @@ Resources:
               - ApplicationLoadBalancer
               - SecurityGroups
       VpcId: !Ref VPC
+
+  InstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable HTTP access via port 80
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: '0.0.0.0/0'
+
+  LoadGenInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: m5a.large
+      IamInstanceProfile: !Ref SSMInstanceProfile
+      SecurityGroups:
+        - !Ref InstanceSecurityGroup
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"
+      UserData: |
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash -xe
+          mkdir -p /tmp/locust
+          cat >/tmp/locust/locustfile.py <<EOF
+          from locust import HttpUser, constant_pacing, task
+
+          class WebsiteUser(HttpUser):
+              # execute a GET request every 1 second
+              wait_time = constant_pacing(1)
+
+              def on_start(self):
+                  print ("Worker thread starting up...")
+
+              @task
+              def index(self):
+                  # request the index and allow a 2 sec timeout for connect or response
+                  self.client.get("/", timeout=(2,2))
+          EOF
+          amazon-linux-extras install -y docker
+          service docker start
+          usermod -a -G docker ssm-user
+          docker pull locustio/locust
+          docker run --rm -d -p 80:8089 -v /tmp/locust:/tmp/locust locustio/locust -f /tmp/locust/locustfile.py
+
+      Tags:
+        - Key: Name
+          Value: GoApp-LoadGen
 
   DBEC2SecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
