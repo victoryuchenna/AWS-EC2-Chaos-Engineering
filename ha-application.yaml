@@ -457,13 +457,17 @@ Resources:
         - !Ref WebServerSecurityGroup
       IamInstanceProfile: !Ref WebServerInstanceProfile
       # https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-local-programming-environment-on-windows-10
-      UserData: |
-        <powershell>
-        iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1'))
-        choco install python -y
-        (new-object net.webclient).DownloadFile('https://s3.amazonaws.com/aws-cli/AWSCLI64.msi','c:\AWSCLI64.msi')
-        msiexec.exe /i 'C:\AWSCLI64.msi' /qn
-        </powershell>
+      UserData:
+        Fn::Base64: |
+          <powershell>
+          iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1'))
+          choco install python -y
+          (new-object net.webclient).DownloadFile('https://s3.amazonaws.com/aws-cli/AWSCLI64.msi','c:\AWSCLI64.msi')
+          msiexec.exe /i 'C:\AWSCLI64.msi' /qn
+          Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+          py -m http.server 80
+          </powershell>
+          <persist>false</persist>
 
   WebServerSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
@@ -494,11 +498,10 @@ Resources:
     Type: 'AWS::EC2::Instance'
     Properties:
       InstanceType: m5a.large
-      IamInstanceProfile: !Ref SSMInstanceProfile
+      IamInstanceProfile: !Ref WebServerInstanceProfile
       SecurityGroups:
         - !Ref InstanceSecurityGroup
       ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"
-      UserData: |
       UserData:
         Fn::Base64: |
           #!/bin/bash -xe
@@ -523,10 +526,6 @@ Resources:
           usermod -a -G docker ssm-user
           docker pull locustio/locust
           docker run --rm -d -p 80:8089 -v /tmp/locust:/tmp/locust locustio/locust -f /tmp/locust/locustfile.py
-
-      Tags:
-        - Key: Name
-          Value: GoApp-LoadGen
 
   DBEC2SecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
