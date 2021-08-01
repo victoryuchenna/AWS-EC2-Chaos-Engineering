@@ -433,6 +433,7 @@ Resources:
       MinSize: '1'
       MaxSize: '5'
       DesiredCapacity: !Ref WebServerCapacity
+      HealthCheckGracePeriod: 300
       TargetGroupARNs:
         - !Ref ALBTargetGroup
     CreationPolicy:
@@ -451,7 +452,7 @@ Resources:
     Metadata:
       Comment1: Configure the bootstrap helpers to install the Apache Web Server and PHP
     Properties:
-      ImageId: '{{resolve:ssm:/aws/service/ami-windows-latest/Windows_Server-2016-English-Full-Base}}'
+      ImageId: '{{resolve:ssm:/aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base}}'
       InstanceType: !Ref InstanceType
       SecurityGroups:
         - !Ref WebServerSecurityGroup
@@ -465,7 +466,7 @@ Resources:
           (new-object net.webclient).DownloadFile('https://s3.amazonaws.com/aws-cli/AWSCLI64.msi','c:\AWSCLI64.msi')
           msiexec.exe /i 'C:\AWSCLI64.msi' /qn
           Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
-          py -m http.server 80
+          Start-Process powershell { py -m http.server 80 }
           </powershell>
           <persist>false</persist>
 
