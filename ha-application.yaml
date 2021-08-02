@@ -351,19 +351,22 @@ Resources:
     Type: 'AWS::EC2::SubnetRouteTableAssociation'
     Properties:
       SubnetId: !Ref PrivateSubnet1
-      RouteTableId: !Ref PrivateRouteTable1
+      # RouteTableId: !Ref PrivateRouteTable1
+      RouteTableId: !Ref IGWRouteTable
 
   PrivateSubnetRouteTableAssociation2:
     Type: 'AWS::EC2::SubnetRouteTableAssociation'
     Properties:
       SubnetId: !Ref PrivateSubnet2
-      RouteTableId: !Ref PrivateRouteTable2
+      # RouteTableId: !Ref PrivateRouteTable2
+      RouteTableId: !Ref IGWRouteTable
 
   PrivateSubnetRouteTableAssociation3:
     Type: 'AWS::EC2::SubnetRouteTableAssociation'
     Properties:
       SubnetId: !Ref PrivateSubnet3
-      RouteTableId: !Ref PrivateRouteTable3
+      # RouteTableId: !Ref PrivateRouteTable3
+      RouteTableId: !Ref IGWRouteTable
 
   ApplicationLoadBalancer:
     Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
@@ -454,6 +457,7 @@ Resources:
     Properties:
       ImageId: '{{resolve:ssm:/aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base}}'
       InstanceType: !Ref InstanceType
+      AssociatePublicIpAddress: true
       SecurityGroups:
         - !Ref WebServerSecurityGroup
       IamInstanceProfile: !Ref WebServerInstanceProfile
@@ -475,6 +479,10 @@ Resources:
     Properties:
       GroupDescription: Enable HTTP access via port 80 locked down to the ELB and SSH access
       SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: '80'
           ToPort: '80'
