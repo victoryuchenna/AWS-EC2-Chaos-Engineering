@@ -136,6 +136,21 @@ Learn more: After the lab see Auto Scaling Groups to learn more how auto scaling
 Deploying multiple servers and Elastic Load Balancing enables a service suffer the loss of a server with no availability disruptions as user traffic is automatically routed to the healthy servers. Amazon Auto Scaling ensures unhealthy hosts are removed and replaced with healthy ones to maintain high availability.
 
 ## 6. Test RDS Failover
+This failure injection will simulate a critical failure of the Amazon RDS DB instance.
+
+1. Before you initiate the failure simulation, refresh the service website several times. Every time the image is loaded, the website writes a record to the Amazon RDS database
+
+2. Click on click here to go to other page and it will show the latest ten entries in the Amazon RDS DB
+
+3. Click on click here to go to other page and it will show the latest ten entries in the Amazon RDS DB
+
+    1. The DB table shows “hits” on our image page
+    2. Website URL access requests are shown here for traffic against the image page. These include IPs of browser traffic as well as IPs of load balancer health checks
+    3. For each region the AWS Elastic Load Balancer makes these health checks, so you will see three IP addresses from these
+    4. Click on click here to go to other page again to return to the image page
+4. Go to the RDS Dashboard in the AWS Console at http://console.aws.amazon.com/rds
+
+
 ## 7. Test Network Disruption
 ## 8. Test S3 Failure
 ## 9. Clean up
