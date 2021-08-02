@@ -75,14 +75,6 @@ Parameters:
     AllowedPattern: '[a-zA-Z0-9]*'
     ConstraintDescription: must contain only alphanumeric characters.
 
-  DBAllocatedStorage:
-    Default: '5'
-    Description: The size of the database (Gb)
-    Type: Number
-    MinValue: '5'
-    MaxValue: '1024'
-    ConstraintDescription: must be between 5 and 1024Gb.
-
   DBInstanceClass:
     Description: The database instance type
     Type: String
@@ -125,6 +117,9 @@ Parameters:
     ConstraintDescription: must be a valid EC2 instance type.
 
 Resources:
+  #####
+  # THE NETWORK
+  #####
   VPC:
     Metadata:
       License: >-
@@ -368,6 +363,9 @@ Resources:
       # RouteTableId: !Ref PrivateRouteTable3
       RouteTableId: !Ref IGWRouteTable
 
+  #####
+  # THE APPLICATION
+  #####
   ApplicationLoadBalancer:
     Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
     Properties:
@@ -536,6 +534,9 @@ Resources:
           docker pull locustio/locust
           docker run --rm -d -p 80:8089 -v /tmp/locust:/tmp/locust locustio/locust -f /tmp/locust/locustfile.py
 
+  #####
+  ## THE DATABASE
+  #####
   DBEC2SecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
     Properties:
@@ -549,6 +550,7 @@ Resources:
 
   MySQLDatabase:
     Type: 'AWS::RDS::DBInstance'
+    DeletionPolicy: Delete
     Properties:
       Engine: MySQL
       DBName: !Ref DBName
@@ -557,7 +559,7 @@ Resources:
       MasterUsername: !Ref DBUser
       MasterUserPassword: !Ref DBPassword
       DBInstanceClass: !Ref DBInstanceClass
-      AllocatedStorage: !Ref DBAllocatedStorage
+      AllocatedStorage: 100
       VPCSecurityGroups:
         - !GetAtt 
           - DBEC2SecurityGroup
