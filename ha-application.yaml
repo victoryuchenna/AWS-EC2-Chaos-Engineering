@@ -47,7 +47,7 @@ Parameters:
     Default: 10.0.80.0/20
 
   DBName:
-    Default: WebappDatabase
+    Default: iptracker
     Description: MySQL database name
     Type: String
     MinLength: '1'
@@ -56,7 +56,7 @@ Parameters:
     ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
 
   DBUser:
-    Default: DbAdmin
+    Default: admin
     NoEcho: 'true'
     Description: Username for MySQL database access
     Type: String
@@ -366,6 +366,17 @@ Resources:
   #####
   # THE APPLICATION
   #####
+  ALBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable HTTP access via port 80
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: '0.0.0.0/0'
+
   ApplicationLoadBalancer:
     Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
     Properties:
@@ -373,6 +384,8 @@ Resources:
         - !Ref PublicSubnet1
         - !Ref PublicSubnet2
         - !Ref PublicSubnet3
+      SecurityGroups:
+        - !GetAtt ALBSecurityGroup.GroupId
 
   ALBListener:
     Type: 'AWS::ElasticLoadBalancingV2::Listener'
@@ -461,16 +474,185 @@ Resources:
       IamInstanceProfile: !Ref WebServerInstanceProfile
       # https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-local-programming-environment-on-windows-10
       UserData:
-        Fn::Base64: |
-          <powershell>
-          iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1'))
-          choco install python -y
-          (new-object net.webclient).DownloadFile('https://s3.amazonaws.com/aws-cli/AWSCLI64.msi','c:\AWSCLI64.msi')
-          msiexec.exe /i 'C:\AWSCLI64.msi' /qn
-          Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
-          Start-Process powershell { py -m http.server 80 }
-          </powershell>
-          <persist>false</persist>
+        Fn::Base64: 
+          !Sub |
+            <powershell>
+            iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1'))
+            choco install mysql-cli -y
+            choco install python -y
+            pip install ec2_metadata pymysql
+            (new-object net.webclient).DownloadFile('https://s3.amazonaws.com/aws-cli/AWSCLI64.msi','c:\AWSCLI64.msi')
+            msiexec.exe /i 'C:\AWSCLI64.msi' /qn
+            Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+            @"
+            CREATE DATABASE IF NOT EXISTS iptracker;
+            USE iptracker;
+            CREATE TABLE IF NOT EXISTS hits(ip varchar(20),
+                              time DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            call mysql.rds_set_configuration('binlog retention hours', 24);
+            GRANT ALTER, CREATE, DROP, INDEX, INSERT, UPDATE, DELETE, SELECT ON myschema.* TO 'admin'@'%';
+            GRANT ALL PRIVILEGES ON awsdms_control.* TO 'admin'@'%';
+            "@ | out-file -encoding ASCII c:\createIPTable.sql
+            # mysql -h ${MySQLDatabase.Endpoint.Address} -u ${DBUser} -p ${DBPassword} <C:\createIPTable.sql --silent --force -b >mysql-stderr.txt
+            @"
+            from http.server import BaseHTTPRequestHandler, HTTPServer
+            from functools import partial
+            from ec2_metadata import ec2_metadata
+            import sys
+            import getopt
+            import pymysql
+
+
+            html = """
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>Resiliency Workshop!</title>
+                </head>
+                <body>
+                    <h1>Welcome to the Resiliency Workshop!</h1>
+                    <p>{Message}</p>
+                    <p>{Content}</p>
+                    <p><a href="{Link}">click here to go to other page</a></p>
+                    <img src="{WebSiteImage}" alt="" width="700">
+                </body>
+            </html>"""
+
+
+            class RequestHandler(BaseHTTPRequestHandler):
+                def __init__(self, url_image, db, *args, **kwargs):
+                    self.url_image = url_image
+                    self.db = db
+                    super().__init__(*args, **kwargs)
+
+                def do_GET(self):
+                    print("path: ", self.path)
+
+                    if self.path == '/':
+                        link = "data"
+                        try:
+                            message_parts = [
+                                'account_id: %s' % ec2_metadata.account_id,
+                                'ami_id: %s' % ec2_metadata.ami_id,
+                                'availability_zone: %s' % ec2_metadata.availability_zone,
+                                'instance_id: %s' % ec2_metadata.instance_id,
+                                'instance_type: %s' % ec2_metadata.instance_type,
+                                'private_hostname: %s' % ec2_metadata.private_hostname,
+                                'private_ipv4: %s' % ec2_metadata.private_ipv4
+                            ]
+                            message = '<br>'.join(message_parts)
+                        except Exception:
+                            message = "Running outside AWS"
+
+                        # Write data into the Database
+                        self.cursor = self.db.cursor()
+                        sql = "INSERT INTO hits(ip) VALUES ('{IPAddress}')".format(IPAddress=self.client_address[0])
+                        self.cursor.execute(sql)
+                        self.db.commit()
+
+                        # Send response status code
+                        self.send_response(200)
+
+                        # Send headers
+                        self.send_header('Content-type', 'text/html')
+                        self.end_headers()
+                        self.wfile.write(
+                            bytes(
+                                html.format(Content=message, WebSiteImage=self.url_image, Message="Data from the metadata API", Link=link),
+                                "utf-8"
+                            )
+                        )
+                    elif self.path == '/data':
+
+                        link = ".."
+
+                        self.cursor = self.db.cursor()
+                        sql = "SELECT * from hits order by time desc limit 10"
+                        self.cursor.execute(sql)
+
+                        results = self.cursor.fetchall()
+                        message = []
+                        for row in results:
+                            ip = row[0]
+                            time = row[1]
+                            message.append("ip = %s   time = %s" % (ip, time))
+
+                        msg = '<br>'.join(message)
+
+                        self.send_response(200)
+
+                        # Send headers
+                        self.send_header('Content-type', 'text/html')
+                        self.end_headers()
+                        self.wfile.write(
+                            bytes(
+                                html.format(Content=msg, WebSiteImage="", Message="Data from the Database", Link=link),
+                                "utf-8"
+                            )
+                        )
+                    return
+
+
+            def run(argv):
+                image_url = "https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg"
+                try:
+                    opts, args = getopt.getopt(
+                        argv,
+                        "hu:p:s:w:d:o:",
+                        [
+                            "help"
+                            "image_url=",
+                            "server_port=",
+                            "db_user=",
+                            "db_pswd=",
+                            "db_name=",
+                            "db_host=",
+                        ]
+                    )
+                except getopt.GetoptError:
+                    print('server.py -u <image_url> -p <server_port> -s <db_user> -w <db_pswd> -d <db_name> -o <db_host>')
+                    sys.exit(2)
+                print(opts)
+                for opt, arg in opts:
+                    if opt in ("-h", "--help"):
+                        print('test.py -u <image_url> -p <server_port> -s <db_user> -w <db_pswd> -d <db_name> -o <db_host>')
+                        sys.exit()
+                    elif opt in ("-u", "--image_url"):
+                        image_url = arg
+                    elif opt in ("-p", "--server_port"):
+                        server_port = int(arg)
+                    elif opt in ("-s", "--db_user"):
+                        db_user = arg
+                    elif opt in ("-w", "--db_pswd"):
+                        db_pswd = arg
+                    elif opt in ("-d", "--db_name"):
+                        db_name = arg
+                    elif opt in ("-o", "--db_host"):
+                        db_host = arg
+
+                # Setup DB
+                print(db_host, db_user, db_pswd, db_name)
+                db = pymysql.connect(host=db_host, user=db_user, password=db_pswd, database=db_name)
+
+                print('starting server...')
+                server_address = ('0.0.0.0', server_port)
+
+                handler = partial(RequestHandler, image_url, db)
+                httpd = HTTPServer(server_address, handler)
+                print('running server...')
+                httpd.serve_forever()
+
+
+            if __name__ == "__main__":
+                run(sys.argv[1:])
+
+            "@ | out-file -encoding ASCII c:\server.py
+            # Start-Process powershell { py c:\server.py -u https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg -p 80 -s ${DBUser} -w ${DBPassword} -d iptracker -o ${MySQLDatabase.Endpoint.Address}}
+            Start-Process powershell { py -m http.server 80 }
+            </powershell>
+            <persist>false</persist>
 
   WebServerSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
@@ -484,17 +666,14 @@ Resources:
         - IpProtocol: tcp
           FromPort: '80'
           ToPort: '80'
-          SourceSecurityGroupId: !Select 
-            - 0
-            - !GetAtt 
-              - ApplicationLoadBalancer
-              - SecurityGroups
+          SourceSecurityGroupId: !GetAtt ALBSecurityGroup.GroupId
       VpcId: !Ref VPC
 
-  InstanceSecurityGroup:
+  LoadGenSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
     Properties:
       GroupDescription: Enable HTTP access via port 80
+      VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: '80'
@@ -506,8 +685,11 @@ Resources:
     Properties:
       InstanceType: m5a.large
       IamInstanceProfile: !Ref WebServerInstanceProfile
-      SecurityGroups:
-        - !Ref InstanceSecurityGroup
+      AssociatePublicIpAddress: true
+      SecurityGroupIds:
+        - !GetAtt LoadGenSecurityGroup.GroupId
+      SubnetId: !Ref PublicSubnet1
+      AssociatePublicIpAddress: true
       ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"
       UserData:
         Fn::Base64: |
