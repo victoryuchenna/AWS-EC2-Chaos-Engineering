@@ -136,6 +136,60 @@ Learn more: After the lab see Auto Scaling Groups to learn more how auto scaling
 Deploying multiple servers and Elastic Load Balancing enables a service suffer the loss of a server with no availability disruptions as user traffic is automatically routed to the healthy servers. Amazon Auto Scaling ensures unhealthy hosts are removed and replaced with healthy ones to maintain high availability.
 
 ## 6. Test RDS Failover
+This failure injection will simulate a critical failure of the Amazon RDS DB instance.
+
+1. Before you initiate the failure simulation, refresh the service website several times. Every time the image is loaded, the website writes a record to the Amazon RDS database
+
+2. Click on <b>click here to go to other page</b> and it will show the latest ten entries in the Amazon RDS DB
+
+    1. The DB table shows “hits” on our <i>image page</i>
+    2. Website URL access requests are shown here for traffic against the <i>image page</i>. These include IPs of browser traffic as well as IPs of load balancer health checks
+    3. For each region the AWS Elastic Load Balancer makes these health checks, so you will see three IP addresses from these
+    4. Click on <b>click here to go to other page</b> again to return to the <i>image page</i>
+3. Go to the RDS Dashboard in the AWS Console at http://console.aws.amazon.com/rds
+
+4.  From the RDS dashboard
+
+    -  Click on “DB Instances (n/40)”
+    - Click on the DB identifier for your database (if you have more than one database, refer to the <b>VPC ID</b> to find the one for this workshop)
+    - If running the <b>multi-region</b> deployment, select the DB instance with Role=<b>Master</b>
+    - Select the <b>Configuration</b> tab
+
+5. Look at the configured values. Note the following:
+    - Value of the <b>Info</b> field is <b>Available</b>
+    - RDS DB is configured to be <b>Multi-AZ</b>. The primary DB instance is in AZ <b>us-east-2a</b> and the standby DB instance is in AZ <b>us-east-2b</b>
+
+![DB Initial Configuration](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/DBInitialConfiguration.png)
+
+6. To failover of the RDS instance, use the VPC ID as the command line argument replacing `<vpc-id>` in one (and only one) of the scripts/programs below. (choose the language that you setup your environment for)
+    <table>
+    <tr>
+    <th>Language</th>
+    <th>Command</th>
+    </tr>
+    <tr>
+    <td>Bash</td>
+    <td>`./failover_rds.sh <vpc-id>`</td>
+    </tr>
+    <tr>
+    <td>Python</td>
+    <td>`python fail_rds.py<vpc-id>`</td>
+    </tr>
+    <tr>
+    <td>Java</td>
+    <td>`java -jar app-resiliency-1.0.jar RDS <vpc-id>`</td>
+    </tr>
+    <tr>
+    <td>C#</td>
+    <td>`.\AppResiliency RDS <vpc-id>`</td>
+    </tr>
+    <tr>
+    <td>Powershell</td>
+    <td>`.\failover_rds.ps1 <vpc-id>`</td>
+    </tr>
+    </table>
+
+7. The specific output will vary based on the command used, but will include some indication that the your Amazon RDS Database is being failedover: `Failing over mdk29lg78789zt`
 ## 7. Test Network Disruption
 ## 8. Test S3 Failure
 ## 9. Clean up
