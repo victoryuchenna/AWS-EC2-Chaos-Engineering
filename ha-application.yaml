@@ -726,8 +726,12 @@ Resources:
           - GroupId
 
 Outputs:
-  WebsiteURL:
-    Description: URL for newly created LAMP stack
+  LoadGenURL:
+    Description: URL for Locust.io load generator
+    Value: !Sub "http://!{LoadGenInstance.PublicIp}"
+
+  ApplicationURL:
+    Description: URL for newly created application server
     Value: !Join 
       - ''
       - - 'http://'
