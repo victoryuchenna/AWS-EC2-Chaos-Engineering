@@ -140,15 +140,28 @@ This failure injection will simulate a critical failure of the Amazon RDS DB ins
 
 1. Before you initiate the failure simulation, refresh the service website several times. Every time the image is loaded, the website writes a record to the Amazon RDS database
 
-2. Click on click here to go to other page and it will show the latest ten entries in the Amazon RDS DB
+2. Click on <b>click here to go to other page</b> and it will show the latest ten entries in the Amazon RDS DB
 
-3. Click on click here to go to other page and it will show the latest ten entries in the Amazon RDS DB
-
-    1. The DB table shows “hits” on our image page
-    2. Website URL access requests are shown here for traffic against the image page. These include IPs of browser traffic as well as IPs of load balancer health checks
+    1. The DB table shows “hits” on our <i>image page</i>
+    2. Website URL access requests are shown here for traffic against the <i>image page</i>. These include IPs of browser traffic as well as IPs of load balancer health checks
     3. For each region the AWS Elastic Load Balancer makes these health checks, so you will see three IP addresses from these
-    4. Click on click here to go to other page again to return to the image page
-4. Go to the RDS Dashboard in the AWS Console at http://console.aws.amazon.com/rds
+    4. Click on <b>click here to go to other page</b> again to return to the <i>image page</i>
+3. Go to the RDS Dashboard in the AWS Console at http://console.aws.amazon.com/rds
+
+4.  From the RDS dashboard
+
+    -  Click on “DB Instances (n/40)”
+    - Click on the DB identifier for your database (if you have more than one database, refer to the <b>VPC ID</b> to find the one for this workshop)
+    - If running the <b>multi-region</b> deployment, select the DB instance with Role=<b>Master</b>
+    - Select the <b>Configuration</b> tab
+
+5. Look at the configured values. Note the following:
+    - Value of the <b>Info</b> field is <b>Available</b>
+    - RDS DB is configured to be <b>Multi-AZ</b>. The primary DB instance is in AZ <b>us-east-2a</b> and the standby DB instance is in AZ <b>us-east-2b</b>
+
+![DB Initial Configuration](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/DBInitialConfiguration.png)
+
+6. To failover of the RDS instance, use the VPC ID as the command line argument replacing <vpc-id> in one (and only one) of the scripts/programs below. (choose the language that you setup your environment for)
 
 
 ## 7. Test Network Disruption
