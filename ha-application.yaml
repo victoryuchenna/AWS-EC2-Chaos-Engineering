@@ -455,7 +455,7 @@ Resources:
             iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1'))
             choco install mysql-cli -y
             choco install python -y
-            pip install ec2_metadata pymysql
+            py -m pip install ec2_metadata pymysql
             (new-object net.webclient).DownloadFile('https://s3.amazonaws.com/aws-cli/AWSCLI64.msi','c:\AWSCLI64.msi')
             msiexec.exe /i 'C:\AWSCLI64.msi' /qn
             Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
@@ -469,7 +469,7 @@ Resources:
             GRANT ALTER, CREATE, DROP, INDEX, INSERT, UPDATE, DELETE, SELECT ON myschema.* TO 'admin'@'%';
             GRANT ALL PRIVILEGES ON awsdms_control.* TO 'admin'@'%';
             "@ | out-file -encoding ASCII c:\createIPTable.sql
-            mysql -h ${MySQLDatabase.Endpoint.Address} -u ${DBUser} -p ${DBPassword} <C:\createIPTable.sql --silent --force -b >mysql-stderr.txt
+            cat c:\createIPTable.sql | mysql -h ${MySQLDatabase.Endpoint.Address} -u ${DBUser} --password=${DBPassword} --silent --force -b >mysql-stderr.txt
             @"
             from http.server import BaseHTTPRequestHandler, HTTPServer
             from functools import partial
