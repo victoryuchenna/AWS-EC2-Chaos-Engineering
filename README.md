@@ -161,9 +161,35 @@ This failure injection will simulate a critical failure of the Amazon RDS DB ins
 
 ![DB Initial Configuration](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/DBInitialConfiguration.png)
 
-6. To failover of the RDS instance, use the VPC ID as the command line argument replacing <vpc-id> in one (and only one) of the scripts/programs below. (choose the language that you setup your environment for)
+6. To failover of the RDS instance, use the VPC ID as the command line argument replacing `<vpc-id>` in one (and only one) of the scripts/programs below. (choose the language that you setup your environment for)
+    <table>
+    <tr>
+    <th>Language</th>
+    <th>Command</th>
+    </tr>
+    <tr>
+    <td>Bash</td>
+    <td>`./failover_rds.sh <vpc-id>`</td>
+    </tr>
+    <tr>
+    <td>Python</td>
+    <td>`python fail_rds.py<vpc-id>`</td>
+    </tr>
+    <tr>
+    <td>Java</td>
+    <td>`java -jar app-resiliency-1.0.jar RDS <vpc-id>`</td>
+    </tr>
+    <tr>
+    <td>C#</td>
+    <td>`.\AppResiliency RDS <vpc-id>`</td>
+    </tr>
+    <tr>
+    <td>Powershell</td>
+    <td>`.\failover_rds.ps1 <vpc-id>`</td>
+    </tr>
+    </table>
 
-
+7. The specific output will vary based on the command used, but will include some indication that the your Amazon RDS Database is being failedover: `Failing over mdk29lg78789zt`
 ## 7. Test Network Disruption
 ## 8. Test S3 Failure
 ## 9. Clean up
