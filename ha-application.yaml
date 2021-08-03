@@ -121,21 +121,6 @@ Resources:
   # THE NETWORK
   #####
   VPC:
-    Metadata:
-      License: >-
-        MIT No Attribution:  Permission is hereby granted, free of charge, to
-        any person obtaining a copy of this software and associated
-        documentation files (the "Software"), to deal in the Software without
-        restriction, including without limitation the rights to use, copy,
-        modify, merge, publish, distribute, sublicense, and/or sell copies of
-        the Software, and to permit persons to whom the Software is furnished to
-        do so.  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-        EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-        MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-        IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-        CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-        TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-        SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     Type: 'AWS::EC2::VPC'
     Properties:
       CidrBlock: !Ref VPCCidrBlock
@@ -162,6 +147,7 @@ Resources:
       VpcId: !Ref VPC
       AvailabilityZone: !Sub '${AWS::Region}a'
       CidrBlock: !Ref PublicCidrBlock1
+      MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
           Value: ApplicationVPC-PublicSubnet1
@@ -172,6 +158,7 @@ Resources:
       VpcId: !Ref VPC
       AvailabilityZone: !Sub '${AWS::Region}b'
       CidrBlock: !Ref PublicCidrBlock2
+      MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
           Value: ApplicationVPC-PublicSubnet2
@@ -182,11 +169,12 @@ Resources:
       VpcId: !Ref VPC
       AvailabilityZone: !Sub '${AWS::Region}c'
       CidrBlock: !Ref PublicCidrBlock3
+      MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
           Value: ApplicationVPC-PublicSubnet3
 
-  IGWRouteTable:
+  PublicRouteTable:
     Type: 'AWS::EC2::RouteTable'
     Properties:
       VpcId: !Ref VPC
@@ -197,7 +185,7 @@ Resources:
   IGWRoute:
     Type: 'AWS::EC2::Route'
     Properties:
-      RouteTableId: !Ref IGWRouteTable
+      RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
@@ -205,19 +193,19 @@ Resources:
     Type: 'AWS::EC2::SubnetRouteTableAssociation'
     Properties:
       SubnetId: !Ref PublicSubnet1
-      RouteTableId: !Ref IGWRouteTable
+      RouteTableId: !Ref PublicRouteTable
 
   PublicSubnetRouteTableAssociation2:
     Type: 'AWS::EC2::SubnetRouteTableAssociation'
     Properties:
       SubnetId: !Ref PublicSubnet2
-      RouteTableId: !Ref IGWRouteTable
+      RouteTableId: !Ref PublicRouteTable
 
   PublicSubnetRouteTableAssociation3:
     Type: 'AWS::EC2::SubnetRouteTableAssociation'
     Properties:
       SubnetId: !Ref PublicSubnet3
-      RouteTableId: !Ref IGWRouteTable
+      RouteTableId: !Ref PublicRouteTable
 
   PrivateSubnet1:
     Type: 'AWS::EC2::Subnet'
@@ -346,22 +334,19 @@ Resources:
     Type: 'AWS::EC2::SubnetRouteTableAssociation'
     Properties:
       SubnetId: !Ref PrivateSubnet1
-      # RouteTableId: !Ref PrivateRouteTable1
-      RouteTableId: !Ref IGWRouteTable
+      RouteTableId: !Ref PrivateRouteTable1
 
   PrivateSubnetRouteTableAssociation2:
     Type: 'AWS::EC2::SubnetRouteTableAssociation'
     Properties:
       SubnetId: !Ref PrivateSubnet2
-      # RouteTableId: !Ref PrivateRouteTable2
-      RouteTableId: !Ref IGWRouteTable
+      RouteTableId: !Ref PrivateRouteTable2
 
   PrivateSubnetRouteTableAssociation3:
     Type: 'AWS::EC2::SubnetRouteTableAssociation'
     Properties:
       SubnetId: !Ref PrivateSubnet3
-      # RouteTableId: !Ref PrivateRouteTable3
-      RouteTableId: !Ref IGWRouteTable
+      RouteTableId: !Ref PrivateRouteTable3
 
   #####
   # THE APPLICATION
@@ -450,21 +435,9 @@ Resources:
       HealthCheckGracePeriod: 300
       TargetGroupARNs:
         - !Ref ALBTargetGroup
-    CreationPolicy:
-      ResourceSignal:
-        Timeout: PT5M
-        Count: !Ref WebServerCapacity
-    UpdatePolicy:
-      AutoScalingRollingUpdate:
-        MinInstancesInService: '1'
-        MaxBatchSize: '1'
-        PauseTime: PT15M
-        WaitOnResourceSignals: 'true'
 
   LaunchConfig:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
-    Metadata:
-      Comment1: Configure the bootstrap helpers to install the Apache Web Server and PHP
     Properties:
       ImageId: '{{resolve:ssm:/aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base}}'
       InstanceType: !Ref InstanceType
@@ -472,11 +445,13 @@ Resources:
       SecurityGroups:
         - !Ref WebServerSecurityGroup
       IamInstanceProfile: !Ref WebServerInstanceProfile
-      # https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-local-programming-environment-on-windows-10
       UserData:
         Fn::Base64: 
           !Sub |
             <powershell>
+            # $ErrorActionPreference = "Stop" 
+            # $LASTEXITCODE=0
+            # cfn-init.exe -s ${AWS::StackId} -r WebServerGroup --region ${AWS::Region}
             iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1'))
             choco install mysql-cli -y
             choco install python -y
@@ -494,7 +469,7 @@ Resources:
             GRANT ALTER, CREATE, DROP, INDEX, INSERT, UPDATE, DELETE, SELECT ON myschema.* TO 'admin'@'%';
             GRANT ALL PRIVILEGES ON awsdms_control.* TO 'admin'@'%';
             "@ | out-file -encoding ASCII c:\createIPTable.sql
-            # mysql -h ${MySQLDatabase.Endpoint.Address} -u ${DBUser} -p ${DBPassword} <C:\createIPTable.sql --silent --force -b >mysql-stderr.txt
+            mysql -h ${MySQLDatabase.Endpoint.Address} -u ${DBUser} -p ${DBPassword} <C:\createIPTable.sql --silent --force -b >mysql-stderr.txt
             @"
             from http.server import BaseHTTPRequestHandler, HTTPServer
             from functools import partial
@@ -649,8 +624,9 @@ Resources:
                 run(sys.argv[1:])
 
             "@ | out-file -encoding ASCII c:\server.py
-            # Start-Process powershell { py c:\server.py -u https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg -p 80 -s ${DBUser} -w ${DBPassword} -d iptracker -o ${MySQLDatabase.Endpoint.Address}}
-            Start-Process powershell { py -m http.server 80 }
+            Start-Process powershell { py c:\server.py -u https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg -p 80 -s ${DBUser} -w ${DBPassword} -d iptracker -o ${MySQLDatabase.Endpoint.Address}}
+            # Start-Process powershell { py -m http.server 80 }
+            # cfn-signal.exe -e $LASTEXITCODE --stack ${AWS::StackId} --resource WebServerGroup --region ${AWS::Region}
             </powershell>
             <persist>false</persist>
 
@@ -659,10 +635,6 @@ Resources:
     Properties:
       GroupDescription: Enable HTTP access via port 80 locked down to the ELB and SSH access
       SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: '80'
           ToPort: '80'
@@ -685,12 +657,10 @@ Resources:
     Properties:
       InstanceType: m5a.large
       IamInstanceProfile: !Ref WebServerInstanceProfile
-      AssociatePublicIpAddress: true
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"
+      SubnetId: !Ref PublicSubnet1
       SecurityGroupIds:
         - !GetAtt LoadGenSecurityGroup.GroupId
-      SubnetId: !Ref PublicSubnet1
-      AssociatePublicIpAddress: true
-      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}"
       UserData:
         Fn::Base64: |
           #!/bin/bash -xe
@@ -712,7 +682,6 @@ Resources:
           EOF
           amazon-linux-extras install -y docker
           service docker start
-          usermod -a -G docker ssm-user
           docker pull locustio/locust
           docker run --rm -d -p 80:8089 -v /tmp/locust:/tmp/locust locustio/locust -f /tmp/locust/locustfile.py
 
@@ -723,12 +692,21 @@ Resources:
     Type: 'AWS::EC2::SecurityGroup'
     Properties:
       GroupDescription: Open database for access
+      VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: '3306'
           ToPort: '3306'
           SourceSecurityGroupId: !Ref WebServerSecurityGroup
-      VpcId: !Ref VPC
+
+  MySQLDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties: 
+      DBSubnetGroupDescription: Subnets for application DB
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
 
   MySQLDatabase:
     Type: 'AWS::RDS::DBInstance'
@@ -746,16 +724,6 @@ Resources:
         - !GetAtt 
           - DBEC2SecurityGroup
           - GroupId
-
-  MySQLDBSubnetGroup:
-    Type: AWS::RDS::DBSubnetGroup
-    Properties: 
-      DBSubnetGroupDescription: Subnets for application DB
-      SubnetIds: 
-        - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
-        - !Ref PrivateSubnet3
-
 
 Outputs:
   WebsiteURL:
