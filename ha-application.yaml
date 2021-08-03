@@ -728,7 +728,7 @@ Resources:
 Outputs:
   LoadGenURL:
     Description: URL for Locust.io load generator
-    Value: !Sub "http://!{LoadGenInstance.PublicIp}"
+    Value: !Sub "http://${LoadGenInstance.PublicIp}"
 
   ApplicationURL:
     Description: URL for newly created application server
