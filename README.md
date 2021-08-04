@@ -169,27 +169,61 @@ This failure injection will simulate a critical failure of the Amazon RDS DB ins
     </tr>
     <tr>
     <td>Bash</td>
-    <td>`./failover_rds.sh <vpc-id>`</td>
+    <td><code>./failover_rds.sh <vpc-id></code></td>
     </tr>
     <tr>
     <td>Python</td>
-    <td>`python fail_rds.py<vpc-id>`</td>
+    <td><code>python fail_rds.py<vpc-id></code></td>
     </tr>
     <tr>
     <td>Java</td>
-    <td>`java -jar app-resiliency-1.0.jar RDS <vpc-id>`</td>
+    <td><code>java -jar app-resiliency-1.0.jar RDS <vpc-id></code></td>
     </tr>
     <tr>
     <td>C#</td>
-    <td>`.\AppResiliency RDS <vpc-id>`</td>
+    <td><code>.\AppResiliency RDS <vpc-id></code></td>
     </tr>
     <tr>
     <td>Powershell</td>
-    <td>`.\failover_rds.ps1 <vpc-id>`</td>
+    <td><code>`.\failover_rds.ps1 <vpc-id></code></td>
     </tr>
     </table>
 
 7. The specific output will vary based on the command used, but will include some indication that the your Amazon RDS Database is being failedover: `Failing over mdk29lg78789zt`
+
+**System response to RDS instance failure**
+
+Watch how the service responds. Note how AWS systems help maintain service availability. Test if there is any non-availability, and if so then how long.
+
+**System availability**
+
+1. The website is not available. Some errors you might see reported:
+    - <b>No Response / Timeout</b>: Request was successfully sent to EC2 server, but server no longer has connection to an active database.
+    - <b>504 Gateway Time-out</b>: Amazon Elastic Load Balancer did not get a response from the server. This can happen when it has removed the servers that are unable to respond and added new ones, but the new ones have not yet finished initialization, and there are no healthy hosts to receive the request.
+    - <b>502 Bad Gateway</b>: The Amazon Elastic Load Balancer got a bad request from the server.
+    - An error you will not see is <b>This site can’t be reached</b>. This is because the Elastic Load Balancer has a node in each of the three Availability Zones and is always available to serve requests.
+
+2. Continue on to the next steps, periodically returning to attempt to refresh the website.
+
+**Failover to standby**
+
+1. On the database console <b>Configuration</b> tab
+    1. Refresh and note the values of the <b>Info</b> field. It will ultimately return to <b>Available</b> when the failover is complete.
+    2. Note the AZs for the primary and standby instances. They have swapped as the standby has no taken over primary responsibility, and the former primary has been restarted. (After RDS failover it can take several minutes for the console to update as shown below. The failover has however completed)
+
+    ![DB PostFail Configuration](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/DBPostFailConfiguration.png)
+
+    3. From the AWS RDS console, click on the <b>Logs & events</b> tab and scroll down to <b>Recent events</b>. You should see entries like those below. In this case failover took less than a minute.
+
+    ```  
+    Mon, 14 Oct 2019 19:53:37 GMT - Multi-AZ instance failover started.
+    Mon, 14 Oct 2019 19:53:45 GMT - DB instance restarted
+    Mon, 14 Oct 2019 19:54:21 GMT - Multi-AZ instance failover completed
+    ```
+
+**EC2 server replacement**
+
+
 ## 7. Test Network Disruption
 ## 8. Test S3 Failure
 ## 9. Clean up
