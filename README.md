@@ -211,7 +211,7 @@ Watch how the service responds. Note how AWS systems help maintain service avail
     1. Refresh and note the values of the <b>Info</b> field. It will ultimately return to <b>Available</b> when the failover is complete.
     2. Note the AZs for the primary and standby instances. They have swapped as the standby has no taken over primary responsibility, and the former primary has been restarted. (After RDS failover it can take several minutes for the console to update as shown below. The failover has however completed)
 
-    ![DB PostFail Configuration](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/DBPostFailConfiguration.png)
+        ![DB PostFail Configuration](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/DBPostFailConfiguration.png)
 
     3. From the AWS RDS console, click on the <b>Logs & events</b> tab and scroll down to <b>Recent events</b>. You should see entries like those below. In this case failover took less than a minute.
 
@@ -222,6 +222,29 @@ Watch how the service responds. Note how AWS systems help maintain service avail
     ```
 
 **EC2 server replacement**
+
+1. From the AWS RDS console, click on the <b>Monitoring</b> tab and look at <b>DB connections</b>
+    - As the failover happens the existing three servers all cannot connect to the DB
+
+    - AWS Auto Scaling detects this (any server not returning an http 200 status is deemed unhealthy), and replaces the three EC2 instances with new ones that establish new connections to the new RDS primary instance
+
+    - The graph shows an unavailability period of about four minutes until at least one DB connection is re-established
+
+        ![RDS DB Connection](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/RDSDbConnections.png)
+
+2. [optional] Go to the [Auto scaling group](https://us-east-2.console.aws.amazon.com/ec2autoscaling/home?region=us-east-2#/details) and AWS Elastic Load Balancer [Target group](http://console.aws.amazon.com/ec2/v2/home?region=us-east-2#TargetGroups:) consoles to see how EC2 instance and traffic routing was handled
+
+**RDS failure injection - conclusion**
+
+- AWS RDS Database failover took less than a minute
+- Time for AWS Auto Scaling to detect that the instances were unhealthy and to start up new ones took four minutes. This resulted in a four minute non-availability event.
+
+**[OPTIONAL] RDS failure injection - improving resiliency**
+
+In this section you reduce the unavailability time from four minutes to <i>under one minute.</i>
+
+> Note: This part of the RDS failure simulation is optional. If you are running this lab as part of a live workshop, then you may want to skip this and come back to it later.
+
 
 
 ## 7. Test Network Disruption
