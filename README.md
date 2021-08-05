@@ -62,53 +62,117 @@ You will create a multi-tier architecture using AWS and run a simple service on 
 
 Using the AWS CLI deploy a CloudFormation template to create the application architecture.
 
-Run a Cloudformation template that creates an ASG, Windows EC2 with User Data, ALB, and an RDS database pre-populated with a schema.
+```bash
+aws cloudformation deploy --template-file ha-application.yaml --stack-name ha-windows --capabilities CAPABILITY_IAM
+```
+
+Run a Cloudformation template that creates an ASG, Windows EC2 with User Data, ALB, and an RDS database pre-populated with a schema.  The web application URL can be found using the following command:
+
+```bash
+aws cloudformation describe-stacks --stack-name ha-windows --query 'Stacks[].Outputs[?OutputKey==`ApplicationURL`].OutputValue' --output text 
+```
 
 Create an S3 bucket and copy an image to it.  Note the URL of the S3 image.
 
-CloudFormation template will also deploy a Locust.io load generator, placing the URL for the ALB and Locust load generator into the Cfn outputs.
+CloudFormation template will also deploy a Locust.io load generator, placing the URL for the ALB and Locust load generator into the Cfn outputs.  The URL for the load generator can be obtained using the following command:
+
+```bash
+aws cloudformation describe-stacks --stack-name ha-windows --query 'Stacks[].Outputs[?OutputKey==`LoadGenURL`].OutputValue' --output text 
+```
 
 ## 4. Preparation for Failure
 
 Identify potential failures:
 - loss of an EC2 instance
+- overloading an EC2 CPU
 - failover of the RDS database
 - network disruption within an AZ
 - loss of Amazon S3
 
 Establish a steady state
-- Start the load generator running at 100 requests per second and observe average response times and error rates.
+- Start the load generator running at 5 requests per second and observe average response times and error rates.
 
 
 ## 5. Test EC2 Failure
 
 This failure injection will simulate a critical problem with one of the three web servers used by your service.
 
-1. Execute fail_instance.sh to fail one of the three EC2 instances hosting your application.
+Applications are at risk for a number of hazards at any given time.  Hazards such as an overloaded CPU, memory exhaustion, a filesystem with no remaining space, or too many open file descriptors - to name a few.  It is impossible to predict and simulate all possible permutations of environmental conditions in which your application operates.  To account for this a simple thing to do is to remove some of the infrastructure your applicatoin relies on to operate.  In the following lab you will delete one of the instances hosting the application to observe the effect it has on the steady state.
 
-1. Observe the effect on the steady state of the application.
+1. To begin create a simple shell script to terminate one of the EC2 instances.
+
+    ```bash
+    cat >fail_instance.sh <<'EOF'
+    # One argument required: VPC of deployed service
+    if [ $# -ne 1 ]; then
+    echo "Usage: $0 <vpc-id>"
+    exit 1
+    fi
+
+    #Find the first running instance in the reservation list that has an instance and return it's instance ID.
+    #Note: This is making a lot of assumptions. A lot more error checking could be done
+    instance_id=`aws ec2 describe-instances --filters Name=instance-state-name,Values=running Name=vpc-id,Values=$1 --query 'Reservations[0].Instances[0].InstanceId' --output text`
+    echo "Terminating $instance_id"
+
+    # Terminate that instance
+    aws ec2 terminate-instances --instance-ids $instance_id
+    EOF
+    chmod 0755 ./fail_instance.sh
+    ```
+
+1. Next execute the script, passing it the ID of the VPC holding the application.
+
+    ```bash
+    ./fail_instance.sh vpc-1234567890
+    ```
+
+    The script should output information similar to the following:
+    ```bash
+    Terminating i-0710123abc631eab3
+    {
+        "TerminatingInstances": [
+            {
+                "CurrentState": {
+                    "Code": 32,
+                    "Name": "shutting-down"
+                },
+                "InstanceId": "i-0710123abc631eab3",
+                "PreviousState": {
+                    "Code": 16,
+                    "Name": "running"
+                }
+            }
+        ]
+    }
+    ```
+
+1. Go to the [EC2 Instances console](http://console.aws.amazon.com/ec2/v2/home?region=us-east-2#Instances:) and confirm that the specified instance is shutting down or terminating.  
+
+1. If you click refresh on the EC2 console you should notice that the auto scaling group launches a new instance to replace the failed instance.
+
+1. Observe the effect on the steady state of the application in the Locust.IO dashboard.  
+
+During the course of the test the error rate for the application should not have exceeded normal levels (around 7%).  
 
 **System Availability**
+
+By monitoring the Locust.IO dashboard you should note that the availability for the application is maintained by the 2 remaining instances in the autoscaling group.  
 
 **Load Balancing**
 Load balancing ensures service requests are not routed to unhealthy resources, such as the failed EC2 instance.
 
-    Go to the Target Groups console
-        If there is more than one target group, select the one with the Load Balancer named ResiliencyTestLoadBalancer
+1. Go to the [Target Groups console](http://console.aws.amazon.com/ec2/v2/home?region=us-east-2#TargetGroups:) and select the target group for your application.
 
-    Click on the Targets tab and observe:
+1. Click on the Targets tab and note:
 
-        Status of the instances in the group. The load balancer will only send traffic to healthy instances.
+    - Status of the instances in the group. The load balancer will only send traffic to healthy instances.
+    - When the auto scaling launches a new instance, it is automatically added to the load balancer target group.
+    - In the screen cap below the unhealthy instance is the newly added one. The load balancer will not send traffic to it until it is completed initializing. It will ultimately transition to healthy and then start receiving traffic.
+    - Note the new instance was started in the same Availability Zone as the failed one. Amazon EC2 Auto Scaling automatically maintains balance across all of the Availability Zones that you specify.
 
-        When the auto scaling launches a new instance, it is automatically added to the load balancer target group.
+    ![Target Group Detail](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/TargetGroups.png)
 
-        In the screen cap below the unhealthy instance is the newly added one. The load balancer will not send traffic to it until it is completed initializing. It will ultimately transition to healthy and then start receiving traffic.
-
-        Note the new instance was started in the same Availability Zone as the failed one. Amazon EC2 Auto Scaling automatically maintains balance across all of the Availability Zones that you specify.
-
-![Target Group Detail](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/TargetGroups.png)
-
-From the same console, now click on the Monitoring tab and view metrics such as Unhealthy hosts and Healthy hosts
+1. From the same console, now click on the **Monitoring** tab and view metrics such as **Unhealthy** hosts and **Healthy** hosts
 
 ![Healthy Hosts](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/TargetGroupsMonitoring.png)
 
@@ -116,20 +180,19 @@ From the same console, now click on the Monitoring tab and view metrics such as 
 
 Auto scaling ensures we have the capacity necessary to meet customer demand. The auto scaling for this service is a simple configuration that ensures at least three EC2 instances are running. More complex configurations in response to CPU or network load are also possible using AWS.
 
-    Go to the Auto Scaling Groups console you already have open (or click here to open a new one )
-        If there is more than one auto scaling group, select the one with the name that starts with WebServersforResiliencyTesting
+1. Go to the [Auto Scaling Groups console](http://console.aws.amazon.com/ec2/autoscaling/home?region=us-east-2#AutoScalingGroups:)
 
-    Click on the Activity History tab and observe:
+1. Click on the **Activity History** tab and observe:
 
-        The screen cap below shows that all three instances were successfully started at 17:25
+    - The screen cap below shows that all three instances were successfully started at the same time.
 
-        At 19:29 the instance targeted by the script was put in draining state and a new instance ending in …62640 was started, but was still initializing. The new instance will ultimately transition to Successful status
+    - At 19:29 the instance targeted by the script was put in draining state and a new instance ending in …62640 was started, but was still initializing. The new instance will ultimately transition to Successful status
 
-![Auto Scaling Detail](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/AutoScalingGroup.png)
+    ![Auto Scaling Detail](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/AutoScalingGroup.png)
 
-Draining allows existing, in-flight requests made to an instance to complete, but it will not send any new requests to the instance. Learn more: After the lab see this blog post for more information on draining.
+Draining allows existing, in-flight requests made to an instance to complete, but it will not send any new requests to the instance. To learn more after the lab see [this blog post](https://aws.amazon.com/blogs/aws/elb-connection-draining-remove-instances-from-service-with-care/) for more information on draining.
 
-Learn more: After the lab see Auto Scaling Groups to learn more how auto scaling groups are setup and how they distribute instances, and Dynamic Scaling for Amazon EC2 Auto Scaling for more details on setting up auto scaling that responds to demand
+To find out more about auto scaling groups see [EC2 Auto Scaling Groups documentation](https://docs.aws.amazon.com/autoscaling/ec2/userguide/AutoScalingGroup.html).  The documentation covers how auto scaling groups are setup and how they distribute instances.  Also see [Dynamic Scaling for Amazon EC2 Auto Scaling](https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-scale-based-on-demand.html) for more details on setting up auto scaling that responds to demand
 
 **EC2 failure injection - conclusion**
 
