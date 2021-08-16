@@ -329,7 +329,7 @@ Detailed Steps
 
 2. Click on <b>WebServersForResiliencyTesting</b> Cloudformation stack
 3. Click the <b>Update</b> button
-4. Select <b>Use current template</b> then click <b>Next
+4. Select <b>Use current template</b> then click <b>Next</b>
 5. On the <b>Parameters</b> page, find the <b>BootObject</b> parameter and replace the value there with `server_with_reconnect.py`
 6. Click <b>Next</b>
 7. Click <b>Next</b>
@@ -341,10 +341,27 @@ Detailed Steps
 
 RDS failure injections - observations
 
-Now repeat the RDS failure injection steps on this page, starting with 5.1 RDS failure injection .
+Now repeat the RDS failure injection steps on this page, starting with [RDS failure injection](#TestRDSFailover).
 
-You will observe that the unavailability time is now under one minute
-    What else is different compared to the previous time the RDS instance failed over?
+* You will observe that the unavailability time is now under one minute
+* What else is different compared to the previous time the RDS instance failed over?
+
+<hr>
+
+**Resources**
+
+<i><b>Learn more</b>: After the lab see [High Availability (Multi-AZ) for Amazon RDS](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html) for more details on high availability and failover support for DB instances using Multi-AZ deployments.</i>
+
+<b>High Availability (Multi-AZ) for Amazon RDS</b>
+
+The primary DB instance switches over automatically to the standby replica if any of the following conditions occur:
+
+* An Availability Zone outage
+* The primary DB instance fails
+* The DB instance’s server type is changed
+* The operating system of the DB instance is undergoing software patching
+ * A manual failover of the DB instance was initiated using Reboot with failover
+
 
 ## 7. Test Network Disruption
 ## 8. Test S3 Failure
