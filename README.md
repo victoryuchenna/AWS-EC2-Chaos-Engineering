@@ -37,7 +37,7 @@ This lab will create resources that will cost approximately $6.50 per day.  Plea
 1. Test Resiliency Using EC2 Failure Injection
 1. Test Resiliency Using RDS Failure Injection
 1. Test Resiliency Using Availability Zone (AZ) Failure Injection
-1. Test Resiliency Using Failure Injection - Optional steps
+1. Test Resiliency Using Failure Injection - Optional steps (S3)
 1. Clean up
 
 
@@ -157,7 +157,7 @@ A CPU stress test is the act of deliberately running your system at maximum capa
 * what did you notice during the test?
 * Why was the website not affected?
 * Did you notice any changes when you increase the duration from 300 seconds to 600 seconds?
-* If you ran the script for longer what do you think would happen to the instanc?
+* If you ran the script for longer what do you think would happen to the instance?
 
 
 
@@ -407,6 +407,217 @@ The primary DB instance switches over automatically to the standby replica if an
 
 
 ## 7. Test Network Disruption
+
+**AZ failure injection**
+
+This failure injection will simulate a critical problem with one of the three AWS Availability Zones (AZs) used by your service. AWS Availability Zones are powerful tools for helping build highly available applications. If an application is partitioned across AZs, companies are better isolated and protected from issues such as lightning strikes, tornadoes, earthquakes and more.
+
+1. Go to the RDS Dashboard in the AWS Console at http://console.aws.amazon.com/rds and note which Availability Zone the AWS RDS primary DB instance is in.
+    * <b>Note</b>: If you previously ran the <b>RDS Failure Injection test</b>, you must wait until the console shows the AZs for the <i>primary</i> and <i>standby</i> instances as swapped, before running this test
+    * A good way to run the AZ failure injection is first in an AZ other than this - we’ll call this <b>Scenario 1</b>
+    * Then try it again in the same AZ as the AWS RDS primary DB instance - we’ll call this <b>Scenario 2</b>
+    * Taking down two out of the three AZs this way is an unlikely use case, however it will show how AWS systems work to maintain service integrity despite extreme circumstances.
+    * And executing this way illustrates the impact and response under the two different scenarios.
+
+2. To simulate failure of an AZ, select one of the Availability Zones used by your service (`us-east-2a`, `us-east-2b`, or `us-east-2c`) as `<az>`
+
+    * For <b>scenario 1</b> select an AZ that is neither <i>primary</i> nor <i>secondary</i> for your RDS DB instance. Given the following RDS console you would choose `us-east-2c`
+    * For <b>scenario 2</b> select the AZ that is <i>primary</i> for your RDS DB instance. Given the following RDS console you would choose `us-east-2b`
+    
+    ![DB Configuration Short](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/DBConfigurationShort.png)
+
+3. use your VPC ID as `<vpc-id>`
+
+4. run this command `..\fail_az.ps1 <az> <vpc-id>`
+
+5. The specific output will vary based on the command used.
+    * Note whether an RDS failover was initiated. This would be the case if you selected the AZ containing the AWS RDS <i>primary</i> DB instance
+
+**System response to AZ failure**
+
+Watch how the service responds. Note how AWS systems help maintain service availability. Test if there is any non-availability, and if so then how long.
+
+**System availability**
+
+Refresh the service website several times
+* <b>Scenario 1</b>: If you selected an AZ not containing the AWS RDS <i>primary</i> DB instance then you should see uninterrupted availability
+* <b>Scenario 2</b>: If you selected the AZ containing the AWS RDS <i>primary</i> DB instance, then an availability loss similar to what you saw with RDS fault injection testing will occur.
+
+**Scenario 1 - Load balancer and web server tiers**
+
+This scenario is similar to the EC2 failure injection test because there is only one EC2 server per AZ in our architecture. Look at the same screens you as for that test:
+* <a href="http://console.aws.amazon.com/ec2/v2/home?region=us-east-2#Instances:">EC2 Instances</a>
+* Load Balancer <a href="http://console.aws.amazon.com/ec2/v2/home?region=us-east-2#TargetGroups:">Target group</a>
+* <a href="http://console.aws.amazon.com/ec2/autoscaling/home?region=us-east-2#AutoScalingGroups:">Auto Scaling Groups</a>
+
+One difference from the EC2 failure test that you will observe is that auto scaling will bring up the replacement EC2 instance in an AZ that already has an EC2 instance as it attempts to balance the requested three EC2 instances across the remaining AZs.
+
+**Scenario 2 - Load balancer, web server, and data tiers**
+
+This scenario is similar to a combination of the RDS failure injection along with EC2 failure injection. In addition to the EC2 related screens look at the <a href="http://console.aws.amazon.com/rds">Amazon RDS console</a>, navigate to your DB screen and observe the following tabs:
+* Configuration
+* Monitoring
+* Logs & Events
+
+**AZ failure injection - conclusion**
+
+This similarity between <b>scenario 1</b> and the EC2 failure test, and between <b>scenario 2</b> and the RDS failure test is illustrative of how an AZ failure impacts your system. The resources in that AZ will have no or limited availability. With the strong partitioning and isolation between Availability Zones however, resources in the other AZs continue to provide your service with needed functionality. <b>Scenario 1</b> results in loss of the load balancer and web server capabilities in one AZ, while Scenario 2 adds to that the additional loss of the data tier. By ensuring that every tier of your system is in multiple AZs, you create a partitioned architecture resilient to failure.
+
+**AZ failure recovery**
+
+This step is optional. To simulate the AZ returning to health do the following:
+
+1. Go to the <a href="http://console.aws.amazon.com/ec2/autoscaling/home?region=us-east-2#AutoScalingGroups:">Auto Scaling Group console</a>
+2. Select the <b>WebServersforResiliencyTesting</b> auto scaling group
+3. Actions » Edit
+4. In the <b>Subnet</b> field add any <b>ResiliencyVPC-PrivateSubnet</b>s that are missing (there should be three total) and <b>Save</b>
+5. Go to the <a href="https://us-east-2.console.aws.amazon.com/vpc/home?region=us-east-2#acls:">Network ACL console</a>
+6. Look at the NACL entries for the VPC called <b>ResiliencyVPC</b>
+7. For any of these NACLs that are not Default do the following
+    1. Select the NACL
+    2. <b>Actions » Edit subnet associations</b>
+    3. Uncheck all boxes and click <b>Edit</b>
+    4. <b>Actions » Delete network ACL</b>
+
+*  Note how the auto scaling redistributes the EC2 serves across the availability zones
+
  <!--Blackhole DNS Stress-->
 ## 8. Test S3 Failure
+**S3 failure injection**
+1. Failure of S3 means that the image will not be available
+2. You may ONLY do this testing if you supplied your own `websiteimage` reference to an S3 bucket you control
+
+**Bucket name**
+
+You will need to know the bucket name where your image is. For example if the `websiteimage` value you supplied was `"https://s3.us-east-2.amazonaws.com/my-awesome-bucketname/my_image.jpg"`, then the bucket name is `my-awesome-bucketname`
+
+For this failure simulation it is most straightforward to use the AWS Console as follows. (If you are interested in doing this <a href="https://www.wellarchitectedlabs.com/reliability/300_labs/300_testing_for_resiliency_of_ec2_rds_and_s3/documentation/s3_with_aws_cli/">using the AWS CLI then see here</a> - choose <i>either</i> AWS Console or AWS CLI)
+
+<u>AWS Console</u>
+
+1. Navigate to the S3 console: https://console.aws.amazon.com/s3
+2. Select the bucket name where the image is located
+3. Select the object, then select the “Permissions” tab
+4. Select the “Public Access” radio button, and deselect the “Read object” checkbox and Save
+5. To re-enable access (after testing), do the same steps, tick the “Read object” checkbox and Save
+
+**System response to S3 failure**
+
+What is the expected effect? How long does it take to take effect?
+
+*  Note that due to browser caching you may still see the image on refreshing the site. On most systems Shift-F5 does a clean refresh with no cache
+
+How would you diagnose if this is a larger problem than permissions?
+
 ## 9. Clean up
+
+<b>If you are attending an in-person workshop and were provided with an AWS account by the instructor:</b>
+
+* There is no need to tear down the lab. Feel free to continue exploring. Log out of your AWS account when done.
+
+<b>If you are using your own AWS account:</b>
+
+* You may leave these resources deployed for as long as you want. When you are ready to delete these resources, see the following instructions
+
+<b>Remove manually provisioned resources</b>
+Some resources were created by the failure simulation scripts. You need to remove these first
+
+1. Go to the <a href="https://us-east-2.console.aws.amazon.com/vpc/home?region=us-east-2#acls:">Network ACL console</a>
+2. Look at the NACL entries for the VPC called <b>ResiliencyVPC</b>
+3. For any of these NACLs that are <i>not Default</i> do the following
+    1. Select the NACL
+    2. <b>Actions » Edit subnet associations</b>
+    3. Uncheck all boxes and click <b>Edit</b>
+    4. <b>Actions » Delete network ACL</b>
+
+
+**Remove AWS CloudFormation provisioned resources**
+
+As part of lab setup you have deployed several AWS CloudFormation stacks. These directions will show you:
+
+* How to delete an AWS CloudFormation stack
+* In what specific order the stacks must be deleted
+
+**How to delete an AWS CloudFormation stack**
+
+1. Go to the AWS CloudFormation console: https://console.aws.amazon.com/cloudformation
+2. Select the CloudFormation stack to delete and click <b>Delete</b>
+
+    ![Deleting Web Servers](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/DeletingWebServers.png)
+
+3. In the confirmation dialog, click <b>Delete stack</b>
+4. The Status changes to <b>DELETE_IN_PROGRESS</b>
+5. Click the refresh button to update and status will ultimately progress to <b>DELETE_COMPLETE</b>
+6. When complete, the stack will no longer be displayed. To see deleted stacks use the drop down next to the Filter text box.
+    ![Show Deleted Stacks](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/ShowDeletedStacks.png)
+
+7. To see progress during stack deletion
+    * Click the stack name
+    * Select the Events column
+    * Refresh to see new events
+
+**Delete workshop CloudFormation stacks**
+* Since AWS resources deployed by AWS CloudFormation stacks may have dependencies on the stacks that were created before, then deletion must occur in the opposite order they were created
+* Stacks with the same ordinal can be deleted at the same time. All stacks for a given ordinal must be DELETE_COMPLETE before moving on to the next ordinal
+
+delete your stacks in the following order
+<table>
+  <tr>
+    <th>Order</th>
+    <th>CloudFormation stack</th>
+  </tr>
+  <tr>
+    <td>1</td>
+    <td>WebServersforResiliencyTesting</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>MySQLforResiliencyTesting</td>
+  </tr>
+  <tr>
+  <td>3</td>
+  <td>ResiliencyVPC</td>
+  </tr>
+  <tr>
+  <td>4</td>
+  <td>DeployResiliencyWorkshop</td>
+  </tr>
+</table>
+
+**Delete remaining resources**
+
+<b>Delete Lambda execution role used to create custom resource</b>
+
+This role was purposely not deleted by the CloudFormation stack, because CloudFormation needs it to delete the custom resource it was used to create. <i>Choose ONE</i>: AWS CLI <b>or</b> AWS Console.
+
+* Do this step only after ALL CloudFormation stacks are <b>DELETE_COMPLETE</b>
+
+Using AWS CLI:
+
+```
+aws iam delete-role-policy --role-name LambdaCustomResourceRole-SecureSsmForRds --policy-name LambdaCustomResourcePolicy
+
+aws iam delete-role --role-name LambdaCustomResourceRole-SecureSsmForRds
+```
+
+Using AWS Console:
+
+1. Go to the IAM Roles Console: https://console.aws.amazon.com/iam/home#/roles
+2. Search for `SecureSsmForRds`
+3. Check the box next to `LambdaCustomResourceRole-SecureSsmForRds`
+4. Click <b>Delete role</b> button
+5. Click <b>Yes, delete</b> button
+
+
+
+<hr>
+
+**References & useful resources**
+
+* EC2 <a href="https://docs.aws.amazon.com/autoscaling/ec2/userguide/AutoScalingGroup.html">Auto Scaling Groups</a>
+* <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/introduction.html">What Is an Application Load Balancer?</a>
+* <a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html">High Availability(Multi-AZ) for Amazon RDS
+    Amazon RDS Under the Hood: Multi-AZ
+    Regions and Availability Zones
+    Injecting Chaos to Amazon EC2 using AWS System Manager
+    Build a serverless multi-region, active-active backend solution in an hour
