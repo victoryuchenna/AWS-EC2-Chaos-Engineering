@@ -97,7 +97,71 @@ Establish a steady state
 
 This failure injection will simulate a critical problem with one of the three web servers used by your service.
 
-Applications are at risk for a number of hazards at any given time.  Hazards such as an overloaded CPU, memory exhaustion, a filesystem with no remaining space, or too many open file descriptors - to name a few.  It is impossible to predict and simulate all possible permutations of environmental conditions in which your application operates.  To account for this a simple thing to do is to remove some of the infrastructure your applicatoin relies on to operate.  In the following lab you will delete one of the instances hosting the application to observe the effect it has on the steady state.
+Applications are at risk for a number of hazards at any given time.  Hazards such as an overloaded CPU, memory exhaustion, a filesystem with no remaining space, or too many open file descriptors - to name a few.  It is impossible to predict and simulate all possible permutations of environmental conditions in which your application operates. In the following lab you will:
+
+* Stress test the CPU of one of the EC2 instances running your application
+
+* Delete one of the instances hosting your application to observe the effect it has on the steady state
+
+**CPU Stress test**
+
+A CPU stress test is the act of deliberately running your system at maximum capacity for a sustained period of time in order to evaluate the stability of its performance.
+
+1. To run this test you will first connect to one of the EC2 instances running your application through session manager
+
+2. Next, Execute the script below. Start by changing the duration to 300 seconds and then run the script again for 600 seconds
+
+```
+ $NumberOfLogicalProcessors = Get-WmiObject win32_processor | Select-Object -ExpandProperty NumberOfLogicalProcessors
+        ForEach ($core in 1..$NumberOfLogicalProcessors){
+          Start-Job -Name "ChaosCpu$core" -ScriptBlock {
+            $result = 1;
+            ForEach ($loopnumber in 1..2147483647){
+              $result=1;
+              ForEach ($loopnumber1 in 1..2147483647){
+                $result=1;
+                ForEach($number in 1..2147483647){
+                  $result = $result * $number
+                } 
+              }
+            }
+          } | Out-Null
+          Write-Host "Started Job ChaosCpu$core"
+        }
+        Write-Host "About to sleep for {{duration}} seconds"
+        $totalduration = {{duration}}
+        Start-Sleep -s ($totalduration/2)
+        Get-WmiObject Win32_Processor | Select LoadPercentage | Format-List
+        Start-Sleep -s ($totalduration/2)
+        Get-WmiObject Win32_Processor | Select LoadPercentage | Format-List
+        
+        Write-Host "About to stop jobs"
+        $cpuJobs = Get-Job -Name "ChaosCpu*"
+        ForEach ($job in $cpuJobs) {
+          Stop-Job -Name $job.Name | Out-Null
+          Write-Host "Stopped $($job.Name)"
+          Remove-Job -Name $job.Name | Out-Null
+          Write-Host "Removed $($job.Name)"
+        }
+```
+
+3. To monitor the CPU stress, in another tab select on the EC2 instance running the script and click on monitor and observe as the CPU usage spikes up
+
+4. On another tab open Locust.io and keep on aye on the failures and RPS
+5. Open another tab, on the sidebar, navigate to target groups under load balancing. Select the right target group and click on monitoring. Monitor how the graphs change as you run the script.
+
+![Monitoring](targetgroupmonitoring.png)
+
+
+<b>Points to ponder:</b>
+* what did you notice during the test?
+* Why was the website not affected?
+* Did you notice any changes when you increase the duration from 300 seconds to 600 seconds?
+* If you ran the script for longer what do you think would happen to the instanc?
+
+
+
+**Delete Instance**
 
 1. To begin create a simple shell script to terminate one of the EC2 instances.
 
@@ -215,7 +279,6 @@ This failure injection will simulate a critical failure of the Amazon RDS DB ins
 
     -  Click on “DB Instances (n/40)”
     - Click on the DB identifier for your database (if you have more than one database, refer to the <b>VPC ID</b> to find the one for this workshop)
-    - If running the <b>multi-region</b> deployment, select the DB instance with Role=<b>Master</b>
     - Select the <b>Configuration</b> tab
 
 5. Look at the configured values. Note the following:
@@ -224,35 +287,15 @@ This failure injection will simulate a critical failure of the Amazon RDS DB ins
 
 ![DB Initial Configuration](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/DBInitialConfiguration.png)
 
-6. To failover of the RDS instance, use the VPC ID as the command line argument replacing `<vpc-id>` in one (and only one) of the scripts/programs below. (choose the language that you setup your environment for)
-    <table>
-    <tr>
-    <th>Language</th>
-    <th>Command</th>
-    </tr>
-    <tr>
-    <td>Bash</td>
-    <td><code>./failover_rds.sh &lt;vpc-id&gt;</code></td>
-    </tr>
-    <tr>
-    <td>Python</td>
-    <td><code>python fail_rds.py<vpc-id></code></td>
-    </tr>
-    <tr>
-    <td>Java</td>
-    <td><code>java -jar app-resiliency-1.0.jar RDS <vpc-id></code></td>
-    </tr>
-    <tr>
-    <td>C#</td>
-    <td><code>.\AppResiliency RDS <vpc-id></code></td>
-    </tr>
-    <tr>
-    <td>Powershell</td>
-    <td><code>`.\failover_rds.ps1 <vpc-id></code></td>
-    </tr>
-    </table>
+6. To failover of the RDS instance, use the VPC ID as the command line argument replacing `<vpc-id>` in one (and only one) of the scripts/programs below.
 
-7. The specific output will vary based on the command used, but will include some indication that the your Amazon RDS Database is being failedover: `Failing over mdk29lg78789zt`
+    ```bash 
+    .\failover_rds.ps1
+     ```
+
+<!-- NEED TO TEST THIS-->
+7. The specific output will vary based on the command used, but will include some indication that the your Amazon RDS Database is being failedover: `Failing over mdk29lg78789zt` 
+<!-- NEED TO TEST THIS-->
 
 **System response to RDS instance failure**
 
@@ -364,5 +407,6 @@ The primary DB instance switches over automatically to the standby replica if an
 
 
 ## 7. Test Network Disruption
+ <!--Blackhole DNS Stress-->
 ## 8. Test S3 Failure
 ## 9. Clean up
