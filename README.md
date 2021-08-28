@@ -60,13 +60,17 @@ You will create a multi-tier architecture using AWS and run a simple service on 
 
 ![Multi-tier applcation](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/ThreeTierArchitecture.png)
 
-Using the AWS CLI deploy a CloudFormation template to create the application architecture.
+Using the following commands, deploy the CloudFormation template in this repository.  The template creates an autoscaling group of Windows EC2 instances with User Data, an application load balancer in front of the Windows servers, and an RDS database pre-populated with a schema.
 
 ```bash
+git clone https://github.com/victoryuchenna/AWS-EC2-Chaos-Engineering.git
+cd ~/environment/AWS-EC2-Chaos-Engineering
 aws cloudformation deploy --template-file ha-application.yaml --stack-name ha-windows --capabilities CAPABILITY_IAM
 ```
 
-Run a Cloudformation template that creates an ASG, Windows EC2 with User Data, ALB, and an RDS database pre-populated with a schema.  The web application URL can be found using the following command:
+**Note: ** The CloudFormation template will take about 20 minutes to deploy.  
+
+When the CloudFormation template has been deployed you can visit the newly created website.  Obtain the URL for the new website using the following command and paste it into your web browser:
 
 ```bash
 aws cloudformation describe-stacks --stack-name ha-windows --query 'Stacks[].Outputs[?OutputKey==`ApplicationURL`].OutputValue' --output text 
@@ -91,6 +95,28 @@ Identify potential failures:
 
 Establish a steady state
 - Start the load generator running at 5 requests per second and observe average response times and error rates.
+
+## Workshop Summary
+
+## FAQ
+
+**1. During CloudFormation deployment the command returns with the following:**
+
+```
+Failed to create/update the stack. Run the following command
+to fetch the list of events leading up to the failure
+aws cloudformation describe-stack-events --stack-name ha-windows
+```
+
+This is ok, this response can also occur if the command times out while waiting for the CloudFormation template to complete its deployment.  To get the current status of the stack's deployment you can visit the [AWS CloudFormation console](https://console.aws.amazon.com/cloudformation/home) or use the following command:
+
+```bash
+aws cloudformation describe-stacks --stack-name ha-windows --query 'Stacks[0].StackStatus'
+```
+
+**2. After deploying the CloudFormation template, when accessing the web application URL, the system reponds with a `504: Bad Gateway` message.**
+
+The Windows instances will take a few minutes to establish a connection with the MySQL database.  If the 504 error message persists for more than 5 minutes after the CloudFormation template has completed its deployment then something has gone wrong.
 
 ---
 
