@@ -2,7 +2,7 @@
 
 ## 7. Test Network Disruption
 
-**AZ failure injection**
+### 7.1 AZ failure injection
 
 This failure injection will simulate a critical problem with one of the three AWS Availability Zones (AZs) used by your service. AWS Availability Zones are powerful tools for helping build highly available applications. If an application is partitioned across AZs, companies are better isolated and protected from issues such as lightning strikes, tornadoes, earthquakes and more.
 
@@ -53,7 +53,7 @@ This scenario is similar to a combination of the RDS failure injection along wit
 * Monitoring
 * Logs & Events
 
-**AZ failure injection - conclusion**
+### 7.2 Conclusion
 
 This similarity between <b>scenario 1</b> and the EC2 failure test, and between <b>scenario 2</b> and the RDS failure test is illustrative of how an AZ failure impacts your system. The resources in that AZ will have no or limited availability. With the strong partitioning and isolation between Availability Zones however, resources in the other AZs continue to provide your service with needed functionality. <b>Scenario 1</b> results in loss of the load balancer and web server capabilities in one AZ, while Scenario 2 adds to that the additional loss of the data tier. By ensuring that every tier of your system is in multiple AZs, you create a partitioned architecture resilient to failure.
 
@@ -74,3 +74,7 @@ This step is optional. To simulate the AZ returning to health do the following:
     4. <b>Actions » Delete network ACL</b>
 
 *  Note how the auto scaling redistributes the EC2 serves across the availability zones
+
+---
+
+You have now disrupted or failed your application servers, your database, and the network connecting them.  In the next lab you will disrupt a serverless capability, Amazon S3, to observe how the system responds when a [serverless dependency fails...](08_s3_failure.md)

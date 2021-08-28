@@ -1,7 +1,7 @@
 # Chaos Engineering for EC2-based Applications
 
 ## 6. Test RDS Failover
-This failure injection will simulate a critical failure of the Amazon RDS DB instance.
+This failure injection will simulate a fail over of the system's managed database.
 
 1. Before you initiate the failure simulation, refresh the service website several times. Every time the image is loaded, the website writes a record to the Amazon RDS database
 
@@ -78,12 +78,12 @@ Watch how the service responds. Note how AWS systems help maintain service avail
 
 2. [optional] Go to the [Auto scaling group](https://us-east-2.console.aws.amazon.com/ec2autoscaling/home?region=us-east-2#/details) and AWS Elastic Load Balancer [Target group](http://console.aws.amazon.com/ec2/v2/home?region=us-east-2#TargetGroups:) consoles to see how EC2 instance and traffic routing was handled
 
-**RDS failure injection - conclusion**
+### 6.2 Database Failover Conclusion
 
 - AWS RDS Database failover took less than a minute
 - Time for AWS Auto Scaling to detect that the instances were unhealthy and to start up new ones took four minutes. This resulted in a four minute non-availability event.
 
-**[OPTIONAL] RDS failure injection - improving resiliency**
+### 6.3 Mitigating Database Failover
 
 In this section you reduce the unavailability time from four minutes to <i>under one minute.</i>
 
@@ -143,3 +143,6 @@ The primary DB instance switches over automatically to the standby replica if an
 * The operating system of the DB instance is undergoing software patching
  * A manual failover of the DB instance was initiated using Reboot with failover
 
+---
+
+In the next lab you will [disrupt the network between components of the system...](07_network_failure.md)

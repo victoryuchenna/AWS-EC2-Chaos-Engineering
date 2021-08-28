@@ -26,3 +26,7 @@ What is the expected effect? How long does it take to take effect?
 *  Note that due to browser caching you may still see the image on refreshing the site. On most systems Shift-F5 does a clean refresh with no cache
 
 How would you diagnose if this is a larger problem than permissions?
+
+---
+
+That concludes all of the labs for this workshop.  Now its time to [cleanup the provisioned resources...](09_cleanup.md)

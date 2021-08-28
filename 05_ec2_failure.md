@@ -10,7 +10,7 @@ Applications are at risk for a number of hazards at any given time.  Hazards suc
 
 * Delete one of the instances hosting your application to observe the effect it has on the steady state
 
-**CPU Stress test**
+### 5.1 CPU Overload Experiment
 
 A CPU stress test is the act of deliberately running your system at maximum capacity for a sustained period of time in order to evaluate the stability of its performance.
 
@@ -68,7 +68,9 @@ A CPU stress test is the act of deliberately running your system at maximum capa
 
 
 
-**Delete Instance**
+### 5.2 EC2 Instance Termination
+
+Whether its a full disk, overloaded CPU, or a crashed JVM - there are many things that could result in an application on an EC2 instance becoming unavailable.  It can be difficult to predict them all so its best to just assume that something can / will take down an application and simulate this by terminating an EC2 instance that is hosting the application.
 
 1. To begin create a simple shell script to terminate one of the EC2 instances.
 
@@ -165,6 +167,10 @@ Draining allows existing, in-flight requests made to an instance to complete, bu
 
 To find out more about auto scaling groups see [EC2 Auto Scaling Groups documentation](https://docs.aws.amazon.com/autoscaling/ec2/userguide/AutoScalingGroup.html).  The documentation covers how auto scaling groups are setup and how they distribute instances.  Also see [Dynamic Scaling for Amazon EC2 Auto Scaling](https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-scale-based-on-demand.html) for more details on setting up auto scaling that responds to demand
 
-**EC2 failure injection - conclusion**
+### 5.3 Conclusion
 
 Deploying multiple servers and Elastic Load Balancing enables a service suffer the loss of a server with no availability disruptions as user traffic is automatically routed to the healthy servers. Amazon Auto Scaling ensures unhealthy hosts are removed and replaced with healthy ones to maintain high availability.
+
+---
+
+Now continue to the next lab to see how to test how the system responds to a [database failover...](06_rds_failure.md)

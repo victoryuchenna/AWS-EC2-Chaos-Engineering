@@ -92,12 +92,8 @@ Identify potential failures:
 Establish a steady state
 - Start the load generator running at 5 requests per second and observe average response times and error rates.
 
-[5 EC2 Failure](05_ec2_failure.md)
+---
 
-[6 RDS Failure](06_rds_failure.md)
+Now that you have deployed an application and identified some potential failures, conduct chaos experiments to test how the system responds to the failures.
 
-[7 Network Disruption](07_network_failure.md)
-
-[8 S3 Failure](08_s3_failure.md)
-
-[9 Cleanup](09_cleanup.md)
+To get started [cause some disruptions to EC2...](05_ec2_failure.md)
