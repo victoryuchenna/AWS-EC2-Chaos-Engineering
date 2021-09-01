@@ -16,6 +16,12 @@ A CPU stress test is the act of deliberately running your system at maximum capa
 
 1. To run this test you will first connect to one of the EC2 instances running your application through session manager
 
+```bash
+ASG_NAME=$(aws cloudformation describe-stacks --stack-name ha-windows --query 'Stacks[].Outputs[?OutputKey==`AutoscalingGroupName`].OutputValue' --output text)
+EC2_INST=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $ASG_NAME --query 'AutoScalingGroups[0].Instances[0].InstanceId'  --output text)
+aws ssm start-session --target $EC2_INST
+```
+
 2. Next, Execute the script below. Start by changing the duration to 300 seconds and then run the script again for 600 seconds
 
 ```
@@ -36,7 +42,7 @@ A CPU stress test is the act of deliberately running your system at maximum capa
           Write-Host "Started Job ChaosCpu$core"
         }
         Write-Host "About to sleep for {{duration}} seconds"
-        $totalduration = {{duration}}
+        $totalduration = 300
         Start-Sleep -s ($totalduration/2)
         Get-WmiObject Win32_Processor | Select LoadPercentage | Format-List
         Start-Sleep -s ($totalduration/2)

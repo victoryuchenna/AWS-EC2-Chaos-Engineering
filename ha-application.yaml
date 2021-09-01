@@ -738,3 +738,7 @@ Outputs:
         - !GetAtt 
           - ApplicationLoadBalancer
           - DNSName
+
+  AutoscalingGroupName:
+    Description: The name of the Autoscaling Group
+    Value: !Ref WebServerGroup
