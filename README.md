@@ -34,11 +34,11 @@ This lab will create resources that will cost approximately $6.50 per day.  Plea
 1. Configure Execution Environment
 1. Deploy the Infrastructure and Application
 1. Preparation for Failure Injection
-1. Test Resiliency Using EC2 Failure Injection
-1. Test Resiliency Using RDS Failure Injection
-1. Test Resiliency Using Availability Zone (AZ) Failure Injection
-1. Test Resiliency Using Failure Injection - Optional steps (S3)
-1. Clean up
+1. [Test Resiliency Using EC2 Failure Injection](05_ec2_failure.md)
+1. [Test Resiliency Using RDS Failure Injection](06_rds_failure.md)
+1. [Test Resiliency Using Availability Zone (AZ) Failure Injection](07_network_failure.md)
+1. [Test Resiliency Using Failure Injection - Optional steps (S3)](08_s3_failure.md)
+1. [Clean up](09_cleanup.md)
 
 
 ## 1. Chaos Engineering:
@@ -60,13 +60,17 @@ You will create a multi-tier architecture using AWS and run a simple service on 
 
 ![Multi-tier applcation](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/ThreeTierArchitecture.png)
 
-Using the AWS CLI deploy a CloudFormation template to create the application architecture.
+Using the following commands, deploy the CloudFormation template in this repository.  The template creates an autoscaling group of Windows EC2 instances with User Data, an application load balancer in front of the Windows servers, and an RDS database pre-populated with a schema.
 
 ```bash
+git clone https://github.com/victoryuchenna/AWS-EC2-Chaos-Engineering.git
+cd ~/environment/AWS-EC2-Chaos-Engineering
 aws cloudformation deploy --template-file ha-application.yaml --stack-name ha-windows --capabilities CAPABILITY_IAM
 ```
 
-Run a Cloudformation template that creates an ASG, Windows EC2 with User Data, ALB, and an RDS database pre-populated with a schema.  The web application URL can be found using the following command:
+**Note: ** The CloudFormation template will take about 20 minutes to deploy.  
+
+When the CloudFormation template has been deployed you can visit the newly created website.  Obtain the URL for the new website using the following command and paste it into your web browser:
 
 ```bash
 aws cloudformation describe-stacks --stack-name ha-windows --query 'Stacks[].Outputs[?OutputKey==`ApplicationURL`].OutputValue' --output text 
@@ -92,532 +96,30 @@ Identify potential failures:
 Establish a steady state
 - Start the load generator running at 5 requests per second and observe average response times and error rates.
 
+## Workshop Summary
 
-## 5. Test EC2 Failure
+## FAQ
 
-This failure injection will simulate a critical problem with one of the three web servers used by your service.
-
-Applications are at risk for a number of hazards at any given time.  Hazards such as an overloaded CPU, memory exhaustion, a filesystem with no remaining space, or too many open file descriptors - to name a few.  It is impossible to predict and simulate all possible permutations of environmental conditions in which your application operates. In the following lab you will:
-
-* Stress test the CPU of one of the EC2 instances running your application
-
-* Delete one of the instances hosting your application to observe the effect it has on the steady state
-
-**CPU Stress test**
-
-A CPU stress test is the act of deliberately running your system at maximum capacity for a sustained period of time in order to evaluate the stability of its performance.
-
-1. To run this test you will first connect to one of the EC2 instances running your application through session manager
-
-2. Next, Execute the script below. Start by changing the duration to 300 seconds and then run the script again for 600 seconds
+**1. During CloudFormation deployment the command returns with the following:**
 
 ```
- $NumberOfLogicalProcessors = Get-WmiObject win32_processor | Select-Object -ExpandProperty NumberOfLogicalProcessors
-        ForEach ($core in 1..$NumberOfLogicalProcessors){
-          Start-Job -Name "ChaosCpu$core" -ScriptBlock {
-            $result = 1;
-            ForEach ($loopnumber in 1..2147483647){
-              $result=1;
-              ForEach ($loopnumber1 in 1..2147483647){
-                $result=1;
-                ForEach($number in 1..2147483647){
-                  $result = $result * $number
-                } 
-              }
-            }
-          } | Out-Null
-          Write-Host "Started Job ChaosCpu$core"
-        }
-        Write-Host "About to sleep for {{duration}} seconds"
-        $totalduration = {{duration}}
-        Start-Sleep -s ($totalduration/2)
-        Get-WmiObject Win32_Processor | Select LoadPercentage | Format-List
-        Start-Sleep -s ($totalduration/2)
-        Get-WmiObject Win32_Processor | Select LoadPercentage | Format-List
-        
-        Write-Host "About to stop jobs"
-        $cpuJobs = Get-Job -Name "ChaosCpu*"
-        ForEach ($job in $cpuJobs) {
-          Stop-Job -Name $job.Name | Out-Null
-          Write-Host "Stopped $($job.Name)"
-          Remove-Job -Name $job.Name | Out-Null
-          Write-Host "Removed $($job.Name)"
-        }
+Failed to create/update the stack. Run the following command
+to fetch the list of events leading up to the failure
+aws cloudformation describe-stack-events --stack-name ha-windows
 ```
 
-3. To monitor the CPU stress, in another tab select on the EC2 instance running the script and click on monitor and observe as the CPU usage spikes up
+This is ok, this response can also occur if the command times out while waiting for the CloudFormation template to complete its deployment.  To get the current status of the stack's deployment you can visit the [AWS CloudFormation console](https://console.aws.amazon.com/cloudformation/home) or use the following command:
 
-4. On another tab open Locust.io and keep on aye on the failures and RPS
-5. Open another tab, on the sidebar, navigate to target groups under load balancing. Select the right target group and click on monitoring. Monitor how the graphs change as you run the script.
-
-![Monitoring](targetgroupmonitoring.png)
-
-
-<b>Points to ponder:</b>
-* what did you notice during the test?
-* Why was the website not affected?
-* Did you notice any changes when you increase the duration from 300 seconds to 600 seconds?
-* If you ran the script for longer what do you think would happen to the instance?
-
-
-
-**Delete Instance**
-
-1. To begin create a simple shell script to terminate one of the EC2 instances.
-
-    ```bash
-    cat >fail_instance.sh <<'EOF'
-    # One argument required: VPC of deployed service
-    if [ $# -ne 1 ]; then
-    echo "Usage: $0 <vpc-id>"
-    exit 1
-    fi
-
-    #Find the first running instance in the reservation list that has an instance and return it's instance ID.
-    #Note: This is making a lot of assumptions. A lot more error checking could be done
-    instance_id=`aws ec2 describe-instances --filters Name=instance-state-name,Values=running Name=vpc-id,Values=$1 --query 'Reservations[0].Instances[0].InstanceId' --output text`
-    echo "Terminating $instance_id"
-
-    # Terminate that instance
-    aws ec2 terminate-instances --instance-ids $instance_id
-    EOF
-    chmod 0755 ./fail_instance.sh
-    ```
-
-1. Next execute the script, passing it the ID of the VPC holding the application.
-
-    ```bash
-    ./fail_instance.sh vpc-1234567890
-    ```
-
-    The script should output information similar to the following:
-    ```bash
-    Terminating i-0710123abc631eab3
-    {
-        "TerminatingInstances": [
-            {
-                "CurrentState": {
-                    "Code": 32,
-                    "Name": "shutting-down"
-                },
-                "InstanceId": "i-0710123abc631eab3",
-                "PreviousState": {
-                    "Code": 16,
-                    "Name": "running"
-                }
-            }
-        ]
-    }
-    ```
-
-1. Go to the [EC2 Instances console](http://console.aws.amazon.com/ec2/v2/home?region=us-east-2#Instances:) and confirm that the specified instance is shutting down or terminating.  
-
-1. If you click refresh on the EC2 console you should notice that the auto scaling group launches a new instance to replace the failed instance.
-
-1. Observe the effect on the steady state of the application in the Locust.IO dashboard.  
-
-During the course of the test the error rate for the application should not have exceeded normal levels (around 7%).  
-
-**System Availability**
-
-By monitoring the Locust.IO dashboard you should note that the availability for the application is maintained by the 2 remaining instances in the autoscaling group.  
-
-**Load Balancing**
-Load balancing ensures service requests are not routed to unhealthy resources, such as the failed EC2 instance.
-
-1. Go to the [Target Groups console](http://console.aws.amazon.com/ec2/v2/home?region=us-east-2#TargetGroups:) and select the target group for your application.
-
-1. Click on the Targets tab and note:
-
-    - Status of the instances in the group. The load balancer will only send traffic to healthy instances.
-    - When the auto scaling launches a new instance, it is automatically added to the load balancer target group.
-    - In the screen cap below the unhealthy instance is the newly added one. The load balancer will not send traffic to it until it is completed initializing. It will ultimately transition to healthy and then start receiving traffic.
-    - Note the new instance was started in the same Availability Zone as the failed one. Amazon EC2 Auto Scaling automatically maintains balance across all of the Availability Zones that you specify.
-
-    ![Target Group Detail](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/TargetGroups.png)
-
-1. From the same console, now click on the **Monitoring** tab and view metrics such as **Unhealthy** hosts and **Healthy** hosts
-
-![Healthy Hosts](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/TargetGroupsMonitoring.png)
-
-**Auto Scaling**
-
-Auto scaling ensures we have the capacity necessary to meet customer demand. The auto scaling for this service is a simple configuration that ensures at least three EC2 instances are running. More complex configurations in response to CPU or network load are also possible using AWS.
-
-1. Go to the [Auto Scaling Groups console](http://console.aws.amazon.com/ec2/autoscaling/home?region=us-east-2#AutoScalingGroups:)
-
-1. Click on the **Activity History** tab and observe:
-
-    - The screen cap below shows that all three instances were successfully started at the same time.
-
-    - At 19:29 the instance targeted by the script was put in draining state and a new instance ending in …62640 was started, but was still initializing. The new instance will ultimately transition to Successful status
-
-    ![Auto Scaling Detail](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/AutoScalingGroup.png)
-
-Draining allows existing, in-flight requests made to an instance to complete, but it will not send any new requests to the instance. To learn more after the lab see [this blog post](https://aws.amazon.com/blogs/aws/elb-connection-draining-remove-instances-from-service-with-care/) for more information on draining.
-
-To find out more about auto scaling groups see [EC2 Auto Scaling Groups documentation](https://docs.aws.amazon.com/autoscaling/ec2/userguide/AutoScalingGroup.html).  The documentation covers how auto scaling groups are setup and how they distribute instances.  Also see [Dynamic Scaling for Amazon EC2 Auto Scaling](https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-scale-based-on-demand.html) for more details on setting up auto scaling that responds to demand
-
-**EC2 failure injection - conclusion**
-
-Deploying multiple servers and Elastic Load Balancing enables a service suffer the loss of a server with no availability disruptions as user traffic is automatically routed to the healthy servers. Amazon Auto Scaling ensures unhealthy hosts are removed and replaced with healthy ones to maintain high availability.
-
-## 6. Test RDS Failover
-This failure injection will simulate a critical failure of the Amazon RDS DB instance.
-
-1. Before you initiate the failure simulation, refresh the service website several times. Every time the image is loaded, the website writes a record to the Amazon RDS database
-
-2. Click on <b>click here to go to other page</b> and it will show the latest ten entries in the Amazon RDS DB
-
-    1. The DB table shows “hits” on our <i>image page</i>
-    2. Website URL access requests are shown here for traffic against the <i>image page</i>. These include IPs of browser traffic as well as IPs of load balancer health checks
-    3. For each region the AWS Elastic Load Balancer makes these health checks, so you will see three IP addresses from these
-    4. Click on <b>click here to go to other page</b> again to return to the <i>image page</i>
-3. Go to the RDS Dashboard in the AWS Console at http://console.aws.amazon.com/rds
-
-4.  From the RDS dashboard
-
-    -  Click on “DB Instances (n/40)”
-    - Click on the DB identifier for your database (if you have more than one database, refer to the <b>VPC ID</b> to find the one for this workshop)
-    - Select the <b>Configuration</b> tab
-
-5. Look at the configured values. Note the following:
-    - Value of the <b>Info</b> field is <b>Available</b>
-    - RDS DB is configured to be <b>Multi-AZ</b>. The primary DB instance is in AZ <b>us-east-2a</b> and the standby DB instance is in AZ <b>us-east-2b</b>
-
-![DB Initial Configuration](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/DBInitialConfiguration.png)
-
-6. To failover of the RDS instance, use the VPC ID as the command line argument replacing `<vpc-id>` in one (and only one) of the scripts/programs below.
-
-    ```bash 
-    .\failover_rds.ps1
-     ```
-
-<!-- NEED TO TEST THIS-->
-7. The specific output will vary based on the command used, but will include some indication that the your Amazon RDS Database is being failedover: `Failing over mdk29lg78789zt` 
-<!-- NEED TO TEST THIS-->
-
-**System response to RDS instance failure**
-
-Watch how the service responds. Note how AWS systems help maintain service availability. Test if there is any non-availability, and if so then how long.
-
-**System availability**
-
-1. The website is not available. Some errors you might see reported:
-    - <b>No Response / Timeout</b>: Request was successfully sent to EC2 server, but server no longer has connection to an active database.
-    - <b>504 Gateway Time-out</b>: Amazon Elastic Load Balancer did not get a response from the server. This can happen when it has removed the servers that are unable to respond and added new ones, but the new ones have not yet finished initialization, and there are no healthy hosts to receive the request.
-    - <b>502 Bad Gateway</b>: The Amazon Elastic Load Balancer got a bad request from the server.
-    - An error you will not see is <b>This site can’t be reached</b>. This is because the Elastic Load Balancer has a node in each of the three Availability Zones and is always available to serve requests.
-
-2. Continue on to the next steps, periodically returning to attempt to refresh the website.
-
-**Failover to standby**
-
-1. On the database console <b>Configuration</b> tab
-    1. Refresh and note the values of the <b>Info</b> field. It will ultimately return to <b>Available</b> when the failover is complete.
-    2. Note the AZs for the primary and standby instances. They have swapped as the standby has no taken over primary responsibility, and the former primary has been restarted. (After RDS failover it can take several minutes for the console to update as shown below. The failover has however completed)
-
-        ![DB PostFail Configuration](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/DBPostFailConfiguration.png)
-
-    3. From the AWS RDS console, click on the <b>Logs & events</b> tab and scroll down to <b>Recent events</b>. You should see entries like those below. In this case failover took less than a minute.
-
-    ```  
-    Mon, 14 Oct 2019 19:53:37 GMT - Multi-AZ instance failover started.
-    Mon, 14 Oct 2019 19:53:45 GMT - DB instance restarted
-    Mon, 14 Oct 2019 19:54:21 GMT - Multi-AZ instance failover completed
-    ```
-
-**EC2 server replacement**
-
-1. From the AWS RDS console, click on the <b>Monitoring</b> tab and look at <b>DB connections</b>
-    - As the failover happens the existing three servers all cannot connect to the DB
-
-    - AWS Auto Scaling detects this (any server not returning an http 200 status is deemed unhealthy), and replaces the three EC2 instances with new ones that establish new connections to the new RDS primary instance
-
-    - The graph shows an unavailability period of about four minutes until at least one DB connection is re-established
-
-        ![RDS DB Connection](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/RDSDbConnections.png)
-
-2. [optional] Go to the [Auto scaling group](https://us-east-2.console.aws.amazon.com/ec2autoscaling/home?region=us-east-2#/details) and AWS Elastic Load Balancer [Target group](http://console.aws.amazon.com/ec2/v2/home?region=us-east-2#TargetGroups:) consoles to see how EC2 instance and traffic routing was handled
-
-**RDS failure injection - conclusion**
-
-- AWS RDS Database failover took less than a minute
-- Time for AWS Auto Scaling to detect that the instances were unhealthy and to start up new ones took four minutes. This resulted in a four minute non-availability event.
-
-**[OPTIONAL] RDS failure injection - improving resiliency**
-
-In this section you reduce the unavailability time from four minutes to <i>under one minute.</i>
-
-> Note: This part of the RDS failure simulation is optional. If you are running this lab as part of a live workshop, then you may want to skip this and come back to it later.
-
-You observed before that failover of the RDS instance itself takes under one minute. However the servers you are running are configured such that they cannot recognize that the IP address for the RDS instance DNS name has changed from the primary to the standby. Availability is only regained once the servers fail to reach the primary, are marked unhealthy, and then are replaced. This accounts for the four minute delay. <b>In this part of the lab you will update the server code to be more resilient to RDS failover. The new code can recognize underlying changes in IP address for the RDS instance DNS name</b>
-
-Use <i>either</i> the <b>Express Steps or Detailed Steps </b>below:
-
-Express Steps
-
-1. Go to the AWS CloudFormation console at https://console.aws.amazon.com/cloudformation
-2. For the <b>WebServersForResiliencyTesting</b> Cloudformation stack
-    1. Redeploy the stack and <b>Use current template</b>
-
-    2. Change the <b>BootObject</b> parameter to `server_with_reconnect.py`
-
-Detailed Steps
-<details>
-<summary>Click here for detailed steps for updating the Cloudformation stack:</summary>
-<br>
-
-1. Go to the AWS CloudFormation console at https://console.aws.amazon.com/cloudformation
-
-2. Click on <b>WebServersForResiliencyTesting</b> Cloudformation stack
-3. Click the <b>Update</b> button
-4. Select <b>Use current template</b> then click <b>Next</b>
-5. On the <b>Parameters</b> page, find the <b>BootObject</b> parameter and replace the value there with `server_with_reconnect.py`
-6. Click <b>Next</b>
-7. Click <b>Next</b>
-8. Scroll to the bottom and under <b>Change set preview</b> note that you are changing the <b>WebServerAutoscalingGroup</b> and <b>WebServerLaunchConfiguration</b>. This CloudFormation deployment will modify the launch configuration to use the improved server code.
-9. Check <b>I acknowledge that AWS CloudFormation might create IAM resources</b>.
-10. Click <b>Update stack</b>
-11. Go the <b>Events</b> tab for the <b>WebServersForResiliencyTesting</b> Cloudformation stack and observe the progress. When the status is <b>UPDATE_COMPLETE_CLEANUP_IN_PROGRESS</b> you may continue.
-</details>
-
-RDS failure injections - observations
-
-Now repeat the RDS failure injection steps on this page, starting with [RDS failure injection](#TestRDSFailover).
-
-* You will observe that the unavailability time is now under one minute
-* What else is different compared to the previous time the RDS instance failed over?
-
-<hr>
-
-**Resources**
-
-<i><b>Learn more</b>: After the lab see [High Availability (Multi-AZ) for Amazon RDS](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html) for more details on high availability and failover support for DB instances using Multi-AZ deployments.</i>
-
-<b>High Availability (Multi-AZ) for Amazon RDS</b>
-
-The primary DB instance switches over automatically to the standby replica if any of the following conditions occur:
-
-* An Availability Zone outage
-* The primary DB instance fails
-* The DB instance’s server type is changed
-* The operating system of the DB instance is undergoing software patching
- * A manual failover of the DB instance was initiated using Reboot with failover
-
-
-## 7. Test Network Disruption
-
-**AZ failure injection**
-
-This failure injection will simulate a critical problem with one of the three AWS Availability Zones (AZs) used by your service. AWS Availability Zones are powerful tools for helping build highly available applications. If an application is partitioned across AZs, companies are better isolated and protected from issues such as lightning strikes, tornadoes, earthquakes and more.
-
-1. Go to the RDS Dashboard in the AWS Console at http://console.aws.amazon.com/rds and note which Availability Zone the AWS RDS primary DB instance is in.
-    * <b>Note</b>: If you previously ran the <b>RDS Failure Injection test</b>, you must wait until the console shows the AZs for the <i>primary</i> and <i>standby</i> instances as swapped, before running this test
-    * A good way to run the AZ failure injection is first in an AZ other than this - we’ll call this <b>Scenario 1</b>
-    * Then try it again in the same AZ as the AWS RDS primary DB instance - we’ll call this <b>Scenario 2</b>
-    * Taking down two out of the three AZs this way is an unlikely use case, however it will show how AWS systems work to maintain service integrity despite extreme circumstances.
-    * And executing this way illustrates the impact and response under the two different scenarios.
-
-2. To simulate failure of an AZ, select one of the Availability Zones used by your service (`us-east-2a`, `us-east-2b`, or `us-east-2c`) as `<az>`
-
-    * For <b>scenario 1</b> select an AZ that is neither <i>primary</i> nor <i>secondary</i> for your RDS DB instance. Given the following RDS console you would choose `us-east-2c`
-    * For <b>scenario 2</b> select the AZ that is <i>primary</i> for your RDS DB instance. Given the following RDS console you would choose `us-east-2b`
-    
-    ![DB Configuration Short](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/DBConfigurationShort.png)
-
-3. use your VPC ID as `<vpc-id>`
-
-4. run this command `..\fail_az.ps1 <az> <vpc-id>`
-
-5. The specific output will vary based on the command used.
-    * Note whether an RDS failover was initiated. This would be the case if you selected the AZ containing the AWS RDS <i>primary</i> DB instance
-
-**System response to AZ failure**
-
-Watch how the service responds. Note how AWS systems help maintain service availability. Test if there is any non-availability, and if so then how long.
-
-**System availability**
-
-Refresh the service website several times
-* <b>Scenario 1</b>: If you selected an AZ not containing the AWS RDS <i>primary</i> DB instance then you should see uninterrupted availability
-* <b>Scenario 2</b>: If you selected the AZ containing the AWS RDS <i>primary</i> DB instance, then an availability loss similar to what you saw with RDS fault injection testing will occur.
-
-**Scenario 1 - Load balancer and web server tiers**
-
-This scenario is similar to the EC2 failure injection test because there is only one EC2 server per AZ in our architecture. Look at the same screens you as for that test:
-* <a href="http://console.aws.amazon.com/ec2/v2/home?region=us-east-2#Instances:">EC2 Instances</a>
-* Load Balancer <a href="http://console.aws.amazon.com/ec2/v2/home?region=us-east-2#TargetGroups:">Target group</a>
-* <a href="http://console.aws.amazon.com/ec2/autoscaling/home?region=us-east-2#AutoScalingGroups:">Auto Scaling Groups</a>
-
-One difference from the EC2 failure test that you will observe is that auto scaling will bring up the replacement EC2 instance in an AZ that already has an EC2 instance as it attempts to balance the requested three EC2 instances across the remaining AZs.
-
-**Scenario 2 - Load balancer, web server, and data tiers**
-
-This scenario is similar to a combination of the RDS failure injection along with EC2 failure injection. In addition to the EC2 related screens look at the <a href="http://console.aws.amazon.com/rds">Amazon RDS console</a>, navigate to your DB screen and observe the following tabs:
-* Configuration
-* Monitoring
-* Logs & Events
-
-**AZ failure injection - conclusion**
-
-This similarity between <b>scenario 1</b> and the EC2 failure test, and between <b>scenario 2</b> and the RDS failure test is illustrative of how an AZ failure impacts your system. The resources in that AZ will have no or limited availability. With the strong partitioning and isolation between Availability Zones however, resources in the other AZs continue to provide your service with needed functionality. <b>Scenario 1</b> results in loss of the load balancer and web server capabilities in one AZ, while Scenario 2 adds to that the additional loss of the data tier. By ensuring that every tier of your system is in multiple AZs, you create a partitioned architecture resilient to failure.
-
-**AZ failure recovery**
-
-This step is optional. To simulate the AZ returning to health do the following:
-
-1. Go to the <a href="http://console.aws.amazon.com/ec2/autoscaling/home?region=us-east-2#AutoScalingGroups:">Auto Scaling Group console</a>
-2. Select the <b>WebServersforResiliencyTesting</b> auto scaling group
-3. Actions » Edit
-4. In the <b>Subnet</b> field add any <b>ResiliencyVPC-PrivateSubnet</b>s that are missing (there should be three total) and <b>Save</b>
-5. Go to the <a href="https://us-east-2.console.aws.amazon.com/vpc/home?region=us-east-2#acls:">Network ACL console</a>
-6. Look at the NACL entries for the VPC called <b>ResiliencyVPC</b>
-7. For any of these NACLs that are not Default do the following
-    1. Select the NACL
-    2. <b>Actions » Edit subnet associations</b>
-    3. Uncheck all boxes and click <b>Edit</b>
-    4. <b>Actions » Delete network ACL</b>
-
-*  Note how the auto scaling redistributes the EC2 serves across the availability zones
-
- <!--Blackhole DNS Stress-->
-## 8. Test S3 Failure
-**S3 failure injection**
-1. Failure of S3 means that the image will not be available
-2. You may ONLY do this testing if you supplied your own `websiteimage` reference to an S3 bucket you control
-
-**Bucket name**
-
-You will need to know the bucket name where your image is. For example if the `websiteimage` value you supplied was `"https://s3.us-east-2.amazonaws.com/my-awesome-bucketname/my_image.jpg"`, then the bucket name is `my-awesome-bucketname`
-
-For this failure simulation it is most straightforward to use the AWS Console as follows. (If you are interested in doing this <a href="https://www.wellarchitectedlabs.com/reliability/300_labs/300_testing_for_resiliency_of_ec2_rds_and_s3/documentation/s3_with_aws_cli/">using the AWS CLI then see here</a> - choose <i>either</i> AWS Console or AWS CLI)
-
-<u>AWS Console</u>
-
-1. Navigate to the S3 console: https://console.aws.amazon.com/s3
-2. Select the bucket name where the image is located
-3. Select the object, then select the “Permissions” tab
-4. Select the “Public Access” radio button, and deselect the “Read object” checkbox and Save
-5. To re-enable access (after testing), do the same steps, tick the “Read object” checkbox and Save
-
-**System response to S3 failure**
-
-What is the expected effect? How long does it take to take effect?
-
-*  Note that due to browser caching you may still see the image on refreshing the site. On most systems Shift-F5 does a clean refresh with no cache
-
-How would you diagnose if this is a larger problem than permissions?
-
-## 9. Clean up
-
-<b>If you are attending an in-person workshop and were provided with an AWS account by the instructor:</b>
-
-* There is no need to tear down the lab. Feel free to continue exploring. Log out of your AWS account when done.
-
-<b>If you are using your own AWS account:</b>
-
-* You may leave these resources deployed for as long as you want. When you are ready to delete these resources, see the following instructions
-
-<b>Remove manually provisioned resources</b>
-Some resources were created by the failure simulation scripts. You need to remove these first
-
-1. Go to the <a href="https://us-east-2.console.aws.amazon.com/vpc/home?region=us-east-2#acls:">Network ACL console</a>
-2. Look at the NACL entries for the VPC called <b>ResiliencyVPC</b>
-3. For any of these NACLs that are <i>not Default</i> do the following
-    1. Select the NACL
-    2. <b>Actions » Edit subnet associations</b>
-    3. Uncheck all boxes and click <b>Edit</b>
-    4. <b>Actions » Delete network ACL</b>
-
-
-**Remove AWS CloudFormation provisioned resources**
-
-As part of lab setup you have deployed several AWS CloudFormation stacks. These directions will show you:
-
-* How to delete an AWS CloudFormation stack
-* In what specific order the stacks must be deleted
-
-**How to delete an AWS CloudFormation stack**
-
-1. Go to the AWS CloudFormation console: https://console.aws.amazon.com/cloudformation
-2. Select the CloudFormation stack to delete and click <b>Delete</b>
-
-    ![Deleting Web Servers](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/DeletingWebServers.png)
-
-3. In the confirmation dialog, click <b>Delete stack</b>
-4. The Status changes to <b>DELETE_IN_PROGRESS</b>
-5. Click the refresh button to update and status will ultimately progress to <b>DELETE_COMPLETE</b>
-6. When complete, the stack will no longer be displayed. To see deleted stacks use the drop down next to the Filter text box.
-    ![Show Deleted Stacks](https://www.wellarchitectedlabs.com/Reliability/300_Testing_for_Resiliency_of_EC2_RDS_and_S3/Images/ShowDeletedStacks.png)
-
-7. To see progress during stack deletion
-    * Click the stack name
-    * Select the Events column
-    * Refresh to see new events
-
-**Delete workshop CloudFormation stacks**
-* Since AWS resources deployed by AWS CloudFormation stacks may have dependencies on the stacks that were created before, then deletion must occur in the opposite order they were created
-* Stacks with the same ordinal can be deleted at the same time. All stacks for a given ordinal must be DELETE_COMPLETE before moving on to the next ordinal
-
-delete your stacks in the following order
-<table>
-  <tr>
-    <th>Order</th>
-    <th>CloudFormation stack</th>
-  </tr>
-  <tr>
-    <td>1</td>
-    <td>WebServersforResiliencyTesting</td>
-  </tr>
-  <tr>
-    <td>2</td>
-    <td>MySQLforResiliencyTesting</td>
-  </tr>
-  <tr>
-  <td>3</td>
-  <td>ResiliencyVPC</td>
-  </tr>
-  <tr>
-  <td>4</td>
-  <td>DeployResiliencyWorkshop</td>
-  </tr>
-</table>
-
-**Delete remaining resources**
-
-<b>Delete Lambda execution role used to create custom resource</b>
-
-This role was purposely not deleted by the CloudFormation stack, because CloudFormation needs it to delete the custom resource it was used to create. <i>Choose ONE</i>: AWS CLI <b>or</b> AWS Console.
-
-* Do this step only after ALL CloudFormation stacks are <b>DELETE_COMPLETE</b>
-
-Using AWS CLI:
-
-```
-aws iam delete-role-policy --role-name LambdaCustomResourceRole-SecureSsmForRds --policy-name LambdaCustomResourcePolicy
-
-aws iam delete-role --role-name LambdaCustomResourceRole-SecureSsmForRds
+```bash
+aws cloudformation describe-stacks --stack-name ha-windows --query 'Stacks[0].StackStatus'
 ```
 
-Using AWS Console:
+**2. After deploying the CloudFormation template, when accessing the web application URL, the system reponds with a `504: Bad Gateway` message.**
 
-1. Go to the IAM Roles Console: https://console.aws.amazon.com/iam/home#/roles
-2. Search for `SecureSsmForRds`
-3. Check the box next to `LambdaCustomResourceRole-SecureSsmForRds`
-4. Click <b>Delete role</b> button
-5. Click <b>Yes, delete</b> button
+The Windows instances will take a few minutes to establish a connection with the MySQL database.  If the 504 error message persists for more than 5 minutes after the CloudFormation template has completed its deployment then something has gone wrong.
 
+---
 
+Now that you have deployed an application and identified some potential failures, conduct chaos experiments to test how the system responds to the failures.
 
-<hr>
-
-**References & useful resources**
-
-* EC2 <a href="https://docs.aws.amazon.com/autoscaling/ec2/userguide/AutoScalingGroup.html">Auto Scaling Groups</a>
-* <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/introduction.html">What Is an Application Load Balancer?</a>
-* <a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html">High Availability(Multi-AZ) for Amazon RDS
-    Amazon RDS Under the Hood: Multi-AZ
-    Regions and Availability Zones
-    Injecting Chaos to Amazon EC2 using AWS System Manager
-    Build a serverless multi-region, active-active backend solution in an hour
+To get started [cause some disruptions to EC2...](05_ec2_failure.md)
