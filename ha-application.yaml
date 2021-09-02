@@ -435,6 +435,10 @@ Resources:
       HealthCheckGracePeriod: 300
       TargetGroupARNs:
         - !Ref ALBTargetGroup
+      Tags:
+        - Key: Name
+          Value: ha-windows-app-server
+          PropagateAtLaunch: true
 
   LaunchConfig:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
@@ -624,7 +628,7 @@ Resources:
                 run(sys.argv[1:])
 
             "@ | out-file -encoding ASCII c:\server.py
-            Start-Process powershell { py c:\server.py -u https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg -p 80 -s ${DBUser} -w ${DBPassword} -d iptracker -o ${MySQLDatabase.Endpoint.Address}}
+            Start-Process -RedirectStandardOutput c:\server-output.log -RedirectStandardError c:\server-error.log py{ c:\server.py -u https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg -p 80 -s ${DBUser} -w ${DBPassword} -d iptracker -o ${MySQLDatabase.Endpoint.Address}}
             # Start-Process powershell { py -m http.server 80 }
             # cfn-signal.exe -e $LASTEXITCODE --stack ${AWS::StackId} --resource WebServerGroup --region ${AWS::Region}
             </powershell>

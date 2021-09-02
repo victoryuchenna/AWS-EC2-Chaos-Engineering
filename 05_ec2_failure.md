@@ -10,60 +10,63 @@ Applications are at risk for a number of hazards at any given time.  Hazards suc
 
 * Delete one of the instances hosting your application to observe the effect it has on the steady state
 
+### 5.1 Application Steady State
+
+Establish the steady state of the application.  Using the load generator set the load generator to 30 requests per second and observe the failure rate and average response time.  Allow the system to settle into its steady state which should result in 0 failures and an average response time of 
+
 ### 5.1 CPU Overload Experiment
 
 A CPU stress test is the act of deliberately running your system at maximum capacity for a sustained period of time in order to evaluate the stability of its performance.
 
 1. To run this test you will first connect to one of the EC2 instances running your application through session manager
 
-```bash
-ASG_NAME=$(aws cloudformation describe-stacks --stack-name ha-windows --query 'Stacks[].Outputs[?OutputKey==`AutoscalingGroupName`].OutputValue' --output text)
-EC2_INST=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $ASG_NAME --query 'AutoScalingGroups[0].Instances[0].InstanceId'  --output text)
-aws ssm start-session --target $EC2_INST
-```
+    ```bash
+    ASG_NAME=$(aws cloudformation describe-stacks --stack-name ha-windows --query 'Stacks[].Outputs[?OutputKey==`AutoscalingGroupName`].OutputValue' --output text)
+    EC2_INST=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $ASG_NAME --query 'AutoScalingGroups[0].Instances[0].InstanceId'  --output text)
+    aws ssm start-session --target $EC2_INST
+    ```
 
-2. Next, Execute the script below. Start by changing the duration to 300 seconds and then run the script again for 600 seconds
+1. Next, Execute the script below. Start by changing the duration to 300 seconds and then run the script again for 600 seconds
 
-```
- $NumberOfLogicalProcessors = Get-WmiObject win32_processor | Select-Object -ExpandProperty NumberOfLogicalProcessors
-        ForEach ($core in 1..$NumberOfLogicalProcessors){
-          Start-Job -Name "ChaosCpu$core" -ScriptBlock {
-            $result = 1;
-            ForEach ($loopnumber in 1..2147483647){
-              $result=1;
-              ForEach ($loopnumber1 in 1..2147483647){
-                $result=1;
-                ForEach($number in 1..2147483647){
-                  $result = $result * $number
-                } 
-              }
+    ```powershell
+    $NumberOfLogicalProcessors = Get-WmiObject win32_processor | Select-Object -ExpandProperty NumberOfLogicalProcessors
+            ForEach ($core in 1..$NumberOfLogicalProcessors){
+              Start-Job -Name "ChaosCpu$core" -ScriptBlock {
+                $result = 1;
+                ForEach ($loopnumber in 1..2147483647){
+                  $result=1;
+                  ForEach ($loopnumber1 in 1..2147483647){
+                    $result=1;
+                    ForEach($number in 1..2147483647){
+                      $result = $result * $number
+                    } 
+                  }
+                }
+              } | Out-Null
+              Write-Host "Started Job ChaosCpu$core"
             }
-          } | Out-Null
-          Write-Host "Started Job ChaosCpu$core"
-        }
-        Write-Host "About to sleep for {{duration}} seconds"
-        $totalduration = 300
-        Start-Sleep -s ($totalduration/2)
-        Get-WmiObject Win32_Processor | Select LoadPercentage | Format-List
-        Start-Sleep -s ($totalduration/2)
-        Get-WmiObject Win32_Processor | Select LoadPercentage | Format-List
-        
-        Write-Host "About to stop jobs"
-        $cpuJobs = Get-Job -Name "ChaosCpu*"
-        ForEach ($job in $cpuJobs) {
-          Stop-Job -Name $job.Name | Out-Null
-          Write-Host "Stopped $($job.Name)"
-          Remove-Job -Name $job.Name | Out-Null
-          Write-Host "Removed $($job.Name)"
-        }
-```
+            Write-Host "About to sleep for {{duration}} seconds"
+            $totalduration = 300
+            Start-Sleep -s ($totalduration/2)
+            Get-WmiObject Win32_Processor | Select LoadPercentage | Format-List
+            Start-Sleep -s ($totalduration/2)
+            Get-WmiObject Win32_Processor | Select LoadPercentage | Format-List
+            
+            Write-Host "About to stop jobs"
+            $cpuJobs = Get-Job -Name "ChaosCpu*"
+            ForEach ($job in $cpuJobs) {
+              Stop-Job -Name $job.Name | Out-Null
+              Write-Host "Stopped $($job.Name)"
+              Remove-Job -Name $job.Name | Out-Null
+              Write-Host "Removed $($job.Name)"
+            }
+    ```
 
-3. To monitor the CPU stress, in another tab select on the EC2 instance running the script and click on monitor and observe as the CPU usage spikes up
+1. To monitor the CPU stress, in another tab select on the EC2 instance running the script and click on monitor and observe as the CPU usage spikes up
+1. On another tab open Locust.io and keep on aye on the failures and RPS
+1. Open another tab, on the sidebar, navigate to target groups under load balancing. Select the right target group and click on monitoring. Monitor how the graphs change as you run the script.
 
-4. On another tab open Locust.io and keep on aye on the failures and RPS
-5. Open another tab, on the sidebar, navigate to target groups under load balancing. Select the right target group and click on monitoring. Monitor how the graphs change as you run the script.
-
-![Monitoring](targetgroupmonitoring.png)
+    ![Monitoring](targetgroupmonitoring.png)
 
 
 <b>Points to ponder:</b>
