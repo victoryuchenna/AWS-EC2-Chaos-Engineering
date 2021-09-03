@@ -28,7 +28,7 @@ This failure injection will simulate a fail over of the system's managed databas
 6. To failover of the RDS instance, use the VPC ID as the command line argument replacing `<vpc-id>` in one (and only one) of the scripts/programs below.
 
     ```bash 
-    .\failover_rds.ps1
+    .\failover_rds.ps1 <vpc-id>
      ```
 
 <!-- NEED TO TEST THIS-->

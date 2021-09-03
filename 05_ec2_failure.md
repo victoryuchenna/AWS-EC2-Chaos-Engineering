@@ -61,7 +61,7 @@ A CPU stress test is the act of deliberately running your system at maximum capa
 
 
 <b>Points to ponder:</b>
-* what did you notice during the test?
+* What did you notice during the test?
 * Why was the website not affected?
 * Did you notice any changes when you increase the duration from 300 seconds to 600 seconds?
 * If you ran the script for longer what do you think would happen to the instance?
