@@ -107,8 +107,8 @@ Using AWS Console:
 
 * EC2 <a href="https://docs.aws.amazon.com/autoscaling/ec2/userguide/AutoScalingGroup.html">Auto Scaling Groups</a>
 * <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/introduction.html">What Is an Application Load Balancer?</a>
-* <a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html">High Availability(Multi-AZ) for Amazon RDS
-    Amazon RDS Under the Hood: Multi-AZ
-    Regions and Availability Zones
-    Injecting Chaos to Amazon EC2 using AWS System Manager
-    Build a serverless multi-region, active-active backend solution in an hour
+* <a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html">High Availability(Multi-AZ) for Amazon RDS</a>
+* <a href="https://aws.amazon.com/blogs/database/amazon-rds-under-the-hood-multi-az/">Amazon RDS Under the Hood: Multi-AZ</a>
+* <a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RegionsAndAvailabilityZones.html">Regions and Availability Zones</a>
+* <a href="https://medium.com/@adhorn/injecting-chaos-to-amazon-ec2-using-amazon-system-manager-ca95ee7878f5">Injecting Chaos to Amazon EC2 using AWS System Manager</a>
+* <a href="https://read.acloud.guru/building-a-serverless-multi-region-active-active-backend-36f28bed4ecf">Build a serverless multi-region, active-active backend solution in an hour</a>
