@@ -453,6 +453,7 @@ Resources:
         Fn::Base64: 
           !Sub |
             <powershell>
+            Start-Transcript -Path "C:\UserData.log" -Append
             # $ErrorActionPreference = "Stop" 
             # $LASTEXITCODE=0
             # cfn-init.exe -s ${AWS::StackId} -r WebServerGroup --region ${AWS::Region}
@@ -509,7 +510,7 @@ Resources:
                     super().__init__(*args, **kwargs)
 
                 def do_GET(self):
-                    logging.info("path: ", self.path)
+                    logging.info("path: {}".format (self.path))
 
                     if self.path == '/':
                         link = "data"
@@ -629,7 +630,10 @@ Resources:
                 run(sys.argv[1:])
 
             "@ | out-file -encoding ASCII c:\server.py
-            Start-Process -WorkingDirectory c:\ -RedirectStandardOutput c:\server-output.log -RedirectStandardError c:\server-error.log python { c:\server.py -u https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg -p 80 -s ${DBUser} -w ${DBPassword} -d iptracker -o ${MySQLDatabase.Endpoint.Address}}
+            # Get-Command python
+            # Start-Sleep -s 30
+            # Get-Command python
+            Start-Process -WorkingDirectory c:\ -RedirectStandardOutput c:\server-output.log -RedirectStandardError c:\server-error.log py { c:\server.py -u https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg -p 80 -s ${DBUser} -w ${DBPassword} -d iptracker -o ${MySQLDatabase.Endpoint.Address}}
             # cfn-signal.exe -e $LASTEXITCODE --stack ${AWS::StackId} --resource WebServerGroup --region ${AWS::Region}
             </powershell>
             <persist>false</persist>
