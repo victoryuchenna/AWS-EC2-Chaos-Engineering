@@ -432,6 +432,7 @@ Resources:
       MinSize: '1'
       MaxSize: '5'
       DesiredCapacity: !Ref WebServerCapacity
+      HealthCheckType: ELB
       HealthCheckGracePeriod: 300
       TargetGroupARNs:
         - !Ref ALBTargetGroup

@@ -6,17 +6,19 @@ This failure injection will simulate a critical problem with one of the three we
 
 Applications are at risk for a number of hazards at any given time.  Hazards such as an overloaded CPU, memory exhaustion, a filesystem with no remaining space, or too many open file descriptors - to name a few.  It is impossible to predict and simulate all possible permutations of environmental conditions in which your application operates. In the following lab you will:
 
-* Stress test the CPU of one of the EC2 instances running your application
+* Create a Low Disk Space Error on one of the EC2 instances running your application
 
 * Delete one of the instances hosting your application to observe the effect it has on the steady state
 
 ### 5.1 Application Steady State
 
-Establish the steady state of the application.  Using the load generator set the load generator to 30 requests per second and observe the failure rate and average response time.  Allow the system to settle into its steady state which should result in 0 failures and an average response time of 
+Establish the steady state of the application.  Using the load generator set the load generator to 30 requests per second and observe the failure rate, average response time, and request rate.  Allow the system to settle into its steady state which should result in 0 failures, an average response time of 300 microseconds, and an RPS above 25.
 
-### 5.1 CPU Overload Experiment
+### 5.1 Low Disk Space Experiment
 
-A CPU stress test is the act of deliberately running your system at maximum capacity for a sustained period of time in order to evaluate the stability of its performance.
+In this experiment you will affect the storage of the instance hosting your application to observe its effect on the application.  There are different scenarios you can simulate but in this test you will presume that various logs and data files have been created on the system which have exhausted the available disk space.  You will then observe how a lack of disk space affects the application on the instance and the overall system as a whole.
+
+To perform this experiment you will create a connection to a random instance which is hosting your application.  You will then run a PowerShell script to completely consume the available space on the C drive of the system.  You will then observe the effect this has on the steady state of the application.
 
 1. To run this test you will first connect to one of the EC2 instances running your application through session manager
 
@@ -26,43 +28,16 @@ A CPU stress test is the act of deliberately running your system at maximum capa
     aws ssm start-session --target $EC2_INST
     ```
 
-1. Next, Execute the script below. Start by changing the duration to 300 seconds and then run the script again for 600 seconds
+1. Next, Execute the script below. The below PowerShell script will create a series of 1 Mb files in an effort to completely fill the available disk space on the C drive.
 
-    ```powershell
-    $NumberOfLogicalProcessors = Get-WmiObject win32_processor | Select-Object -ExpandProperty NumberOfLogicalProcessors
-            ForEach ($core in 1..$NumberOfLogicalProcessors){
-              Start-Job -Name "ChaosCpu$core" -ScriptBlock {
-                $result = 1;
-                ForEach ($loopnumber in 1..2147483647){
-                  $result=1;
-                  ForEach ($loopnumber1 in 1..2147483647){
-                    $result=1;
-                    ForEach($number in 1..2147483647){
-                      $result = $result * $number
-                    } 
-                  }
-                }
-              } | Out-Null
-              Write-Host "Started Job ChaosCpu$core"
-            }
-            Write-Host "About to sleep for {{duration}} seconds"
-            $totalduration = 300
-            Start-Sleep -s ($totalduration/2)
-            Get-WmiObject Win32_Processor | Select LoadPercentage | Format-List
-            Start-Sleep -s ($totalduration/2)
-            Get-WmiObject Win32_Processor | Select LoadPercentage | Format-List
-            
-            Write-Host "About to stop jobs"
-            $cpuJobs = Get-Job -Name "ChaosCpu*"
-            ForEach ($job in $cpuJobs) {
-              Stop-Job -Name $job.Name | Out-Null
-              Write-Host "Stopped $($job.Name)"
-              Remove-Job -Name $job.Name | Out-Null
-              Write-Host "Removed $($job.Name)"
-            }
+    ```PowerShell
+    for ($i = 1; $i > 0; $i++) {
+	    $file = [io.file]::Create(“disk.data.$i”)
+	    $file.SetLength(1Mb)
+	    $file.close()
+    }
     ```
 
-1. To monitor the CPU stress, in another tab select on the EC2 instance running the script and click on monitor and observe as the CPU usage spikes up
 1. On another tab open Locust.io and keep on aye on the failures and RPS
 1. Open another tab, on the sidebar, navigate to target groups under load balancing. Select the right target group and click on monitoring. Monitor how the graphs change as you run the script.
 
