@@ -483,8 +483,11 @@ Resources:
             import getopt
             import pymysql
             import logging
+            from time import time
+            import uuid
 
-            logging.basicConfig(filename='server.log', encoding='utf-8', level=logging.DEBUG)
+            # logging.basicConfig(filename='server.log', encoding='utf-8', level=logging.DEBUG)
+            logging.basicConfig(filename='server.log', level=logging.DEBUG)
 
             html = """
             <!DOCTYPE html>
@@ -510,7 +513,10 @@ Resources:
                     super().__init__(*args, **kwargs)
 
                 def do_GET(self):
-                    logging.info("path: {}".format (self.path))
+                    rqst_id = uuid.uuid4()
+
+                    logging.info("request {} - path: {}".format(rqst_id, self.path))
+                    start_time = time ()
 
                     if self.path == '/':
                         link = "data"
@@ -528,11 +534,13 @@ Resources:
                         except Exception:
                             message = "Running outside AWS"
 
+                        logging.info("request {} - message render time: {}".format (rqst_id, time () - start_time))
                         # Write data into the Database
                         self.cursor = self.db.cursor()
                         sql = "INSERT INTO hits(ip) VALUES ('{IPAddress}')".format(IPAddress=self.client_address[0])
                         self.cursor.execute(sql)
                         self.db.commit()
+                        logging.info("request {} - access record time: {}".format (rqst_id, time () - start_time))
 
                         # Send response status code
                         self.send_response(200)
@@ -546,6 +554,7 @@ Resources:
                                 "utf-8"
                             )
                         )
+                        logging.info("request {} - response send time: {}".format (rqst_id, time () - start_time))
                     elif self.path == '/data':
 
                         link = ".."
@@ -558,8 +567,8 @@ Resources:
                         message = []
                         for row in results:
                             ip = row[0]
-                            time = row[1]
-                            message.append("ip = %s   time = %s" % (ip, time))
+                            data_time = row[1]
+                            message.append("ip = %s   time = %s" % (ip, data_time))
 
                         msg = '<br>'.join(message)
 
@@ -574,6 +583,8 @@ Resources:
                                 "utf-8"
                             )
                         )
+                    else:
+                        logging.warn("request {} - no path handler found".format (rqst_id))
                     return
 
 
@@ -615,7 +626,7 @@ Resources:
                         db_host = arg
 
                 # Setup DB
-                logging.info(db_host, db_user, db_pswd, db_name)
+                logging.info("DB Host {}, user {}, password {}, DB name {}".format (db_host, db_user, db_pswd, db_name))
                 db = pymysql.connect(host=db_host, user=db_user, password=db_pswd, database=db_name)
 
                 logging.info('starting server...')
@@ -672,8 +683,8 @@ Resources:
       UserData:
         Fn::Base64: |
           #!/bin/bash -xe
-          mkdir -p /tmp/locust
-          cat >/tmp/locust/locustfile.py <<EOF
+          mkdir -p /root/locust
+          cat >/root/locust/locustfile.py <<EOF
           from locust import HttpUser, constant_pacing, task
 
           class WebsiteUser(HttpUser):
@@ -686,12 +697,12 @@ Resources:
               @task
               def index(self):
                   # request the index and allow a 2 sec timeout for connect or response
-                  self.client.get("/", timeout=(2,2))
+                  self.client.get("/", timeout=(60,60))
           EOF
           amazon-linux-extras install -y docker
           service docker start
           docker pull locustio/locust
-          docker run --rm -d -p 80:8089 -v /tmp/locust:/tmp/locust locustio/locust -f /tmp/locust/locustfile.py
+          docker run --rm -d -p 80:8089 -v /root/locust:/tmp/locust locustio/locust -f /tmp/locust/locustfile.py
 
   #####
   ## THE DATABASE
