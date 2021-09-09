@@ -56,31 +56,32 @@ To perform this experiment you will create a connection to a random instance whi
 
 Whether its a full disk, overloaded CPU, or a crashed JVM - there are many things that could result in an application on an EC2 instance becoming unavailable.  It can be difficult to predict them all so its best to just assume that something can / will take down an application and simulate this by terminating an EC2 instance that is hosting the application.
 
+In the previous lab you created a remoate, interactive session with one of the application instances.  While on that server you manually executed a command to disrupt the system.  In this next activity you will not only introduce a disruption but also script that disruption so that it can be executed with less manual intervention.
+
 1. To begin create a simple shell script to terminate one of the EC2 instances.
 
     ```bash
     cat >fail_instance.sh <<'EOF'
-    # One argument required: VPC of deployed service
     if [ $# -ne 1 ]; then
-    echo "Usage: $0 <vpc-id>"
-    exit 1
+      echo "Usage: $0 <autoscalinggroup-name>"
+      exit 1
     fi
 
-    #Find the first running instance in the reservation list that has an instance and return it's instance ID.
-    #Note: This is making a lot of assumptions. A lot more error checking could be done
-    instance_id=`aws ec2 describe-instances --filters Name=instance-state-name,Values=running Name=vpc-id,Values=$1 --query 'Reservations[0].Instances[0].InstanceId' --output text`
-    echo "Terminating $instance_id"
+    #Find the first running instance in the autoscaling group and return it's instance ID.
+    EC2_INST=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $1 --query 'AutoScalingGroups[0].Instances[0].InstanceId'  --output text)
+    echo "Terminating $EC2_INST"
 
     # Terminate that instance
-    aws ec2 terminate-instances --instance-ids $instance_id
+    aws ec2 terminate-instances --instance-ids $EC2_INST
     EOF
     chmod 0755 ./fail_instance.sh
     ```
 
-1. Next execute the script, passing it the ID of the VPC holding the application.
+1. Next execute the script, passing it the name of the autoscaling group holding the application.
 
     ```bash
-    ./fail_instance.sh vpc-1234567890
+    ASG_NAME=$(aws cloudformation describe-stacks --stack-name ha-windows --query 'Stacks[].Outputs[?OutputKey==`AutoscalingGroupName`].OutputValue' --output text)
+    ./fail_instance.sh $ASG_NAME
     ```
 
     The script should output information similar to the following:
