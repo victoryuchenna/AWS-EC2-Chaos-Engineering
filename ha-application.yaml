@@ -762,3 +762,7 @@ Outputs:
   AutoscalingGroupName:
     Description: The name of the Autoscaling Group
     Value: !Ref WebServerGroup
+
+  DBInstanceName:
+    Description: The name of the MySQL Database Instance
+    Value: !Ref MySQLDatabase
