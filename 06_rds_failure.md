@@ -28,11 +28,123 @@ This failure injection will simulate a fail over of the system's managed databas
 6. To failover of the RDS instance, use the VPC ID as the command line argument replacing `<vpc-id>` in one (and only one) of the scripts/programs below.
 
     ```bash 
-    .\failover_rds.ps1 <vpc-id>
+    DB_INST=$(aws cloudformation describe-stacks --stack-name ha-windows --query 'Stacks[].Outputs[?OutputKey==`DBInstanceName`].OutputValue' --output text) 
+    aws rds reboot-db-instance --db-instance-identifier $DB_INST --force-failover
      ```
 
 <!-- NEED TO TEST THIS-->
 7. The specific output will vary based on the command used, but will include some indication that the your Amazon RDS Database is being failedover: `Failing over mdk29lg78789zt` 
+
+{
+    "DBInstance": {
+        "DBInstanceIdentifier": "hm1g1p0p3tbi2uq",
+        "DBInstanceClass": "db.t2.small",
+        "Engine": "mysql",
+        "DBInstanceStatus": "rebooting",
+        "MasterUsername": "admin",
+        "DBName": "iptracker",
+        "Endpoint": {
+            "Address": "hm1g1p0p3tbi2uq.cxvuonns1sza.eu-west-1.rds.amazonaws.com",
+            "Port": 3306,
+            "HostedZoneId": "Z29XKXDKYMONMX"
+        },
+        "AllocatedStorage": 100,
+        "InstanceCreateTime": "2021-09-09T13:31:29.658000+00:00",
+        "PreferredBackupWindow": "23:46-00:16",
+        "BackupRetentionPeriod": 1,
+        "DBSecurityGroups": [],
+        "VpcSecurityGroups": [
+            {
+                "VpcSecurityGroupId": "sg-033cea4346bc5bdae",
+                "Status": "active"
+            }
+        ],
+        "DBParameterGroups": [
+            {
+                "DBParameterGroupName": "default.mysql8.0",
+                "ParameterApplyStatus": "in-sync"
+            }
+        ],
+        "AvailabilityZone": "eu-west-1b",
+        "DBSubnetGroup": {
+            "DBSubnetGroupName": "ha-windows-mysqldbsubnetgroup-14t2xu2pm5lx9",
+            "DBSubnetGroupDescription": "Subnets for application DB",
+            "VpcId": "vpc-08322a9816f12c186",
+            "SubnetGroupStatus": "Complete",
+            "Subnets": [
+                {
+                    "SubnetIdentifier": "subnet-0aef7d4c24cdba31b",
+                    "SubnetAvailabilityZone": {
+                        "Name": "eu-west-1c"
+                    },
+                    "SubnetOutpost": {},
+                    "SubnetStatus": "Active"
+                },
+                {
+                    "SubnetIdentifier": "subnet-05ace8830eef3c22f",
+                    "SubnetAvailabilityZone": {
+                        "Name": "eu-west-1b"
+                    },
+                    "SubnetOutpost": {},
+                    "SubnetStatus": "Active"
+                },
+                {
+                    "SubnetIdentifier": "subnet-0753f1969c8070287",
+                    "SubnetAvailabilityZone": {
+                        "Name": "eu-west-1a"
+                    },
+                    "SubnetOutpost": {},
+                    "SubnetStatus": "Active"
+                }
+            ]
+        },
+        "PreferredMaintenanceWindow": "thu:01:05-thu:01:35",
+        "PendingModifiedValues": {},
+        "LatestRestorableTime": "2021-09-10T00:05:00+00:00",
+        "MultiAZ": true,
+        "EngineVersion": "8.0.23",
+        "AutoMinorVersionUpgrade": true,
+        "ReadReplicaDBInstanceIdentifiers": [],
+        "LicenseModel": "general-public-license",
+        "OptionGroupMemberships": [
+            {
+                "OptionGroupName": "default:mysql-8-0",
+                "Status": "in-sync"
+            }
+        ],
+        "SecondaryAvailabilityZone": "eu-west-1a",
+        "PubliclyAccessible": false,
+        "StorageType": "standard",
+        "DbInstancePort": 0,
+        "StorageEncrypted": false,
+        "DbiResourceId": "db-PFQSDXEQMYKRGIJE7FOEH42QSU",
+        "CACertificateIdentifier": "rds-ca-2019",
+        "DomainMemberships": [],
+        "CopyTagsToSnapshot": false,
+        "MonitoringInterval": 0,
+        "DBInstanceArn": "arn:aws:rds:eu-west-1:867003831966:db:hm1g1p0p3tbi2uq",
+        "IAMDatabaseAuthenticationEnabled": false,
+        "PerformanceInsightsEnabled": false,
+        "DeletionProtection": false,
+        "AssociatedRoles": [],
+        "TagList": [
+            {
+                "Key": "aws:cloudformation:stack-id",
+                "Value": "arn:aws:cloudformation:eu-west-1:867003831966:stack/ha-windows/4758eeb0-1171-11ec-a855-06d6f34d86f7"
+            },
+            {
+                "Key": "aws:cloudformation:stack-name",
+                "Value": "ha-windows"
+            },
+            {
+                "Key": "aws:cloudformation:logical-id",
+                "Value": "MySQLDatabase"
+            }
+        ],
+        "CustomerOwnedIpEnabled": false
+    }
+}
+
 <!-- NEED TO TEST THIS-->
 
 **System response to RDS instance failure**
