@@ -1,6 +1,7 @@
 var http = require("http");
 var mysql = require('mysql');
 var AWS = require('aws-sdk');
+const { v4: uuidv4 } = require('uuid');
 
 var db = mysql.createConnection({
   host: 'hm1gsu8jb9nqdvg.ckqc4dnfzj72.eu-west-2.rds.amazonaws.com',
@@ -42,7 +43,9 @@ function writeResponse(message, content, link, imageUrl, res) {
 }
 
 var server = http.createServer(function (req, res) {
-  console.log("Node.js web server handling request..");
+  var rqstId = uuidv4();
+  console.log(new Date(), `handling request ${rqstId} from ${req.socket.remoteAddress} for ${req.url}`);
+
   if (req.url == "/") {
     var webSiteImageUrl = "https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg";
     message = `Data from the metadata API`;
@@ -68,8 +71,7 @@ var server = http.createServer(function (req, res) {
     res.end();
   } else
     if (req.url == "/data") {
-      console.log("Providing detailed response");
-
+      console.log(new Date(), `request ${rqstId}, Providing detailed response`);
 
       // set response header
       res.writeHead(200, { "Content-Type": "text/html" });
@@ -86,8 +88,8 @@ var server = http.createServer(function (req, res) {
           content += 'ip = ' + row.ip + ' \t time = ' + row.time + '<br/>';
         });
 
-              writeResponse(message, content, "/", "", res);
-              res.end();
+        writeResponse(message, content, "/", "", res);
+        res.end();
       });
 
     } else {
@@ -97,4 +99,4 @@ var server = http.createServer(function (req, res) {
 
 server.listen(SERVER_PORT);
 
-console.log(`Node.js web server at port ${SERVER_PORT} is running..`);
+console.log(new Date(), `Node.js web server at port ${SERVER_PORT} is running..`);
