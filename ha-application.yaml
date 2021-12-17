@@ -109,10 +109,10 @@ Parameters:
   InstanceType:
     Description: WebServer EC2 instance type
     Type: String
-    Default: t3.large
+    Default: t3.micro
     AllowedValues:
-      - t2.large
-      - t3.large
+      - t2.micro
+      - t3.micro
       - m4.large
     ConstraintDescription: must be a valid EC2 instance type.
 
