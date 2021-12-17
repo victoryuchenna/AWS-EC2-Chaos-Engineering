@@ -464,6 +464,9 @@ Resources:
             py -m pip install ec2_metadata pymysql
             (new-object net.webclient).DownloadFile('https://s3.amazonaws.com/aws-cli/AWSCLI64.msi','c:\AWSCLI64.msi')
             msiexec.exe /i 'C:\AWSCLI64.msi' /qn
+            Invoke-WebRequest -Uri https://nodejs.org/dist/v16.13.1/node-v16.13.1-win-x64.zip -UseBasicParsing -OutFile c:\users\administrator\nodejs.zip
+            Expand-Archive -LiteralPath c:\users\administrator\nodejs.zip -DestinationPath c:\users\administrator
+            c:\users\administrator\node-v16.13.1-win-x64\npm install mysql aws-sdk uuid
             Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
             @"
             CREATE DATABASE IF NOT EXISTS iptracker;
@@ -477,175 +480,110 @@ Resources:
             "@ | out-file -encoding ASCII c:\createIPTable.sql
             cat c:\createIPTable.sql | mysql -h ${MySQLDatabase.Endpoint.Address} -u ${DBUser} --password=${DBPassword} --silent --force -b >mysql-stderr.txt
             @"
-            from http.server import BaseHTTPRequestHandler, HTTPServer
-            from functools import partial
-            from ec2_metadata import ec2_metadata
-            import sys
-            import getopt
-            import pymysql
-            import logging
-            from time import time
-            import uuid
+            var http = require("http");
+            var mysql = require('mysql');
+            var AWS = require('aws-sdk');
+            const { v4: uuidv4 } = require('uuid');
 
-            # logging.basicConfig(filename='server.log', encoding='utf-8', level=logging.DEBUG)
-            logging.basicConfig(filename='server.log', level=logging.DEBUG)
+            var db = mysql.createConnection({
+              host: 'hm1gsu8jb9nqdvg.ckqc4dnfzj72.eu-west-2.rds.amazonaws.com',
+              user: 'admin',
+              password: 'DbPassword',
+              database: 'iptracker'
+            });
 
-            html = """
-            <!DOCTYPE html>
-            <html>
-                <head>
-                    <meta charset="utf-8">
-                    <title>Resiliency Workshop!</title>
-                </head>
-                <body>
-                    <h1>Welcome to the Resiliency Workshop!</h1>
-                    <p>{Message}</p>
-                    <p>{Content}</p>
-                    <p><a href="{Link}">click here to go to other page</a></p>
-                    <img src="{WebSiteImage}" alt="" width="700">
-                </body>
-            </html>"""
+            db.connect();
 
+            var SERVER_PORT = 8080;
 
-            class RequestHandler(BaseHTTPRequestHandler):
-                def __init__(self, url_image, db, *args, **kwargs):
-                    self.url_image = url_image
-                    self.db = db
-                    super().__init__(*args, **kwargs)
+            var metadata = {};
+            var META = new AWS.MetadataService();
+            META.request('/latest/dynamic/instance-identity/document', function (err, data) {
+              metadata = JSON.parse(data);
+              META.request('/latest/meta-data/local-hostname', function (err, data) {
+                metadata['privateHostname'] = data;
+              });
+            });
 
-                def do_GET(self):
-                    rqst_id = uuid.uuid4()
+            function writeResponse(message, content, link, imageUrl, res) {
+              // set response content
+              res.write(`
+                        <!DOCTYPE html>
+                        <html>
+                            <head>
+                                <meta charset="utf-8">
+                                <title>Resiliency Workshop!</title>
+                            </head>
+                            <body>
+                                <h1>Welcome to the Resiliency Workshop!</h1>
+                                <p>${message}</p>
+                                <p>${content}</p>
+                                <p><a href="${link}">click here to go to other page</a></p>
+                                <img src="${imageUrl}" alt="" width="700">
+                            </body>
+                        </html>`);
+            }
 
-                    logging.info("request {} - path: {}".format(rqst_id, self.path))
-                    start_time = time ()
+            var server = http.createServer(function (req, res) {
+              var rqstId = uuidv4();
+              console.log(new Date(), `handling request ${rqstId} from ${req.socket.remoteAddress} for ${req.url}`);
 
-                    if self.path == '/':
-                        link = "data"
-                        try:
-                            message_parts = [
-                                'account_id: %s' % ec2_metadata.account_id,
-                                'ami_id: %s' % ec2_metadata.ami_id,
-                                'availability_zone: %s' % ec2_metadata.availability_zone,
-                                'instance_id: %s' % ec2_metadata.instance_id,
-                                'instance_type: %s' % ec2_metadata.instance_type,
-                                'private_hostname: %s' % ec2_metadata.private_hostname,
-                                'private_ipv4: %s' % ec2_metadata.private_ipv4
-                            ]
-                            message = '<br>'.join(message_parts)
-                        except Exception:
-                            message = "Running outside AWS"
+              if (req.url == "/") {
+                var webSiteImageUrl = "https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg";
+                message = `Data from the metadata API`;
+                content = `
+                  accountId: ${metadata.accountId}<br/>
+                  amiId: ${metadata.imageId}<br/>
+                  availabilityZone: ${metadata.availabilityZone}<br/>
+                  instanceId: ${metadata.instanceId}<br/>
+                  instanceType: ${metadata.instanceType}<br/>
+                  privateHostname: ${metadata.privateHostname}<br/>
+                  privateIp: ${metadata.privateIp}<br/>
+                `;
 
-                        logging.info("request {} - message render time: {}".format (rqst_id, time () - start_time))
-                        # Write data into the Database
-                        self.cursor = self.db.cursor()
-                        sql = "INSERT INTO hits(ip) VALUES ('{IPAddress}')".format(IPAddress=self.client_address[0])
-                        self.cursor.execute(sql)
-                        self.db.commit()
-                        logging.info("request {} - access record time: {}".format (rqst_id, time () - start_time))
+                db.query("INSERT INTO hits(ip) values (?)", [req.socket.remoteAddress], function (error, results, fields) {
+                  if (error) throw error;
+                });
 
-                        # Send response status code
-                        self.send_response(200)
+                // set response header
+                res.writeHead(200, { "Content-Type": "text/html" });
 
-                        # Send headers
-                        self.send_header('Content-type', 'text/html')
-                        self.end_headers()
-                        self.wfile.write(
-                            bytes(
-                                html.format(Content=message, WebSiteImage=self.url_image, Message="Data from the metadata API", Link=link),
-                                "utf-8"
-                            )
-                        )
-                        logging.info("request {} - response send time: {}".format (rqst_id, time () - start_time))
-                    elif self.path == '/data':
+                writeResponse(message, content, "/data", webSiteImageUrl, res);
 
-                        link = ".."
+                res.end();
+              } else
+                if (req.url == "/data") {
+                  console.log(new Date(), `request ${rqstId}, Providing detailed response`);
 
-                        self.cursor = self.db.cursor()
-                        sql = "SELECT * from hits order by time desc limit 10"
-                        self.cursor.execute(sql)
+                  // set response header
+                  res.writeHead(200, { "Content-Type": "text/html" });
 
-                        results = self.cursor.fetchall()
-                        message = []
-                        for row in results:
-                            ip = row[0]
-                            data_time = row[1]
-                            message.append("ip = %s   time = %s" % (ip, data_time))
+                  message = `Data from the database`;
 
-                        msg = '<br>'.join(message)
+                  db.query('SELECT * FROM hits ORDER BY time DESC LIMIT 10', function (error, results, fields) {
+                    if (error) throw error;
+                    // console.log (results);
+                    content = '';
+                    Object.keys(results).forEach(function (key) {
+                      var row = results[key];
+                      // console.log (row);
+                      content += 'ip = ' + row.ip + ' \t time = ' + row.time + '<br/>';
+                    });
 
-                        self.send_response(200)
+                    writeResponse(message, content, "/", "", res);
+                    res.end();
+                  });
 
-                        # Send headers
-                        self.send_header('Content-type', 'text/html')
-                        self.end_headers()
-                        self.wfile.write(
-                            bytes(
-                                html.format(Content=msg, WebSiteImage="", Message="Data from the Database", Link=link),
-                                "utf-8"
-                            )
-                        )
-                    else:
-                        logging.warn("request {} - no path handler found".format (rqst_id))
-                    return
+                } else {
+                  res.end("Invalid Request!");
+                }
+            });
 
+            server.listen(SERVER_PORT);
 
-            def run(argv):
-                image_url = "https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg"
-                try:
-                    opts, args = getopt.getopt(
-                        argv,
-                        "hu:p:s:w:d:o:",
-                        [
-                            "help"
-                            "image_url=",
-                            "server_port=",
-                            "db_user=",
-                            "db_pswd=",
-                            "db_name=",
-                            "db_host=",
-                        ]
-                    )
-                except getopt.GetoptError:
-                    logging.error('server.py -u <image_url> -p <server_port> -s <db_user> -w <db_pswd> -d <db_name> -o <db_host>')
-                    sys.exit(2)
-                logging.info(opts)
-                for opt, arg in opts:
-                    if opt in ("-h", "--help"):
-                        logging.error('test.py -u <image_url> -p <server_port> -s <db_user> -w <db_pswd> -d <db_name> -o <db_host>')
-                        sys.exit()
-                    elif opt in ("-u", "--image_url"):
-                        image_url = arg
-                    elif opt in ("-p", "--server_port"):
-                        server_port = int(arg)
-                    elif opt in ("-s", "--db_user"):
-                        db_user = arg
-                    elif opt in ("-w", "--db_pswd"):
-                        db_pswd = arg
-                    elif opt in ("-d", "--db_name"):
-                        db_name = arg
-                    elif opt in ("-o", "--db_host"):
-                        db_host = arg
-
-                # Setup DB
-                logging.info("DB Host {}, user {}, password {}, DB name {}".format (db_host, db_user, db_pswd, db_name))
-                db = pymysql.connect(host=db_host, user=db_user, password=db_pswd, database=db_name)
-
-                logging.info('starting server...')
-                server_address = ('0.0.0.0', server_port)
-
-                handler = partial(RequestHandler, image_url, db)
-                httpd = HTTPServer(server_address, handler)
-                logging.info('running server...')
-                httpd.serve_forever()
-
-            if __name__ == "__main__":
-                run(sys.argv[1:])
-
-            "@ | out-file -encoding ASCII c:\server.py
-            # Get-Command python
-            # Start-Sleep -s 30
-            # Get-Command python
-            Start-Process -WorkingDirectory c:\ -RedirectStandardOutput c:\server-output.log -RedirectStandardError c:\server-error.log py { c:\server.py -u https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg -p 80 -s ${DBUser} -w ${DBPassword} -d iptracker -o ${MySQLDatabase.Endpoint.Address}}
+            console.log(new Date(), `Node.js web server at port ${SERVER_PORT} is running..`);
+            "@ | out-file -encoding ASCII c:\users\administrator\server.js
+            Start-Process -WorkingDirectory c:\users\administrator -RedirectStandardOutput c:\users\administrator\server-output.log -RedirectStandardError c:\users\administrator\server-error.log c:\users\administrator\node-v16.13.1-win-x64\node { c:\users\administrator\server.js -u https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg -p 80 -s ${DBUser} -w ${DBPassword} -d iptracker -o ${MySQLDatabase.Endpoint.Address}}
             # cfn-signal.exe -e $LASTEXITCODE --stack ${AWS::StackId} --resource WebServerGroup --region ${AWS::Region}
             </powershell>
             <persist>false</persist>
