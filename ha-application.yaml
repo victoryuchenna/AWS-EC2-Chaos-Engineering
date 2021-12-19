@@ -117,6 +117,70 @@ Parameters:
     ConstraintDescription: must be a valid EC2 instance type.
 
 Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+
+  S3PutLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:PutObject
+            - s3:DeleteObject
+            Resource: !Sub '${S3Bucket.Arn}*'
+
+  S3PutLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Runtime: python3.7
+      Timeout: 30
+      Role: !GetAtt S3PutLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import cfnresponse
+          import boto3
+          import base64
+
+          def handler(event, context):
+            try:
+              print(json.dumps(event))
+              client = boto3.client('s3')
+              content = ''
+              if 'Content' in event['ResourceProperties']:
+                content = event['ResourceProperties']['Content']
+              if 'Base64Body' in event['ResourceProperties']:
+                content = base64.b64decode(event['ResourceProperties']['Base64Body']).decode()
+              bucket = event['ResourceProperties']['Bucket']
+              key = event['ResourceProperties']['Key']
+              physicalid = 's3://%s/%s' % (bucket, key)
+              if event['RequestType'] == 'Delete':
+                client.delete_object(Bucket=bucket, Key=key)
+              else:
+                client.put_object(Bucket=bucket, Key=key, Body=content.encode())
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physicalid)
+
+            except Exception as e:
+              cfnresponse.send(event, context, cfnresponse.FAILED, {})
+              raise(e)
   #####
   # THE NETWORK
   #####
@@ -413,6 +477,7 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
 
   WebServerInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -420,6 +485,14 @@ Resources:
       Path: /
       Roles:
         - !Ref SSMIAMRole
+
+  AppServerScript:
+    Type: Custom::S3Object
+    Properties:
+      ServiceToken: !GetAtt S3PutLambdaFunction.Arn
+      Bucket: !Ref S3Bucket
+      Key: app-server.js
+      Base64Body: dmFyIGh0dHAgPSByZXF1aXJlKCJodHRwIik7CnZhciBteXNxbCA9IHJlcXVpcmUoJ215c3FsJyk7CnZhciBBV1MgPSByZXF1aXJlKCdhd3Mtc2RrJyk7CmNvbnN0IHsgdjQ6IHV1aWR2NCB9ID0gcmVxdWlyZSgndXVpZCcpOwpjb25zdCBjb21tYW5kTGluZUFyZ3MgPSByZXF1aXJlKCdjb21tYW5kLWxpbmUtYXJncycpOwoKY29uc3Qgb3B0aW9uRGVmaW5pdGlvbnMgPSBbCiAgeyBuYW1lOiAncG9ydCcsIGFsaWFzOiAncCcsIHR5cGU6IE51bWJlciwgZGVmYXVsdE9wdGlvbjogODB9LAogIHsgbmFtZTogJ2RiaG9zdCcsIGFsaWFzOiAnaCcsIHR5cGU6IFN0cmluZ30sCiAgeyBuYW1lOiAnZGJ1c2VyJywgYWxpYXM6ICd1JywgdHlwZTogU3RyaW5nfSwKICB7IG5hbWU6ICdkYnBhc3MnLCBhbGlhczogJ3MnLCB0eXBlOiBTdHJpbmd9LAogIHsgbmFtZTogJ2RibmFtZScsIGFsaWFzOiAnZCcsIHR5cGU6IFN0cmluZ30KXQpjb25zdCBvcHRpb25zID0gY29tbWFuZExpbmVBcmdzKG9wdGlvbkRlZmluaXRpb25zKTsKY29uc29sZS5sb2cob3B0aW9ucyk7Cgp2YXIgZGIgPSBteXNxbC5jcmVhdGVDb25uZWN0aW9uKHsKICBob3N0OiBvcHRpb25zLmRiaG9zdCwKICB1c2VyOiBvcHRpb25zLmRidXNlciwKICBwYXNzd29yZDogb3B0aW9ucy5kYnBhc3MsCiAgZGF0YWJhc2U6IG9wdGlvbnMuZGJuYW1lCn0pOwoKZGIuY29ubmVjdCgpOwoKdmFyIFNFUlZFUl9QT1JUID0gb3B0aW9ucy5wb3J0OwoKdmFyIG1ldGFkYXRhID0ge307CnZhciBNRVRBID0gbmV3IEFXUy5NZXRhZGF0YVNlcnZpY2UoKTsKTUVUQS5yZXF1ZXN0KCcvbGF0ZXN0L2R5bmFtaWMvaW5zdGFuY2UtaWRlbnRpdHkvZG9jdW1lbnQnLCBmdW5jdGlvbiAoZXJyLCBkYXRhKSB7CiAgbWV0YWRhdGEgPSBKU09OLnBhcnNlKGRhdGEpOwogIE1FVEEucmVxdWVzdCgnL2xhdGVzdC9tZXRhLWRhdGEvbG9jYWwtaG9zdG5hbWUnLCBmdW5jdGlvbiAoZXJyLCBkYXRhKSB7CiAgICBtZXRhZGF0YVsncHJpdmF0ZUhvc3RuYW1lJ10gPSBkYXRhOwogIH0pOwp9KTsKCmZ1bmN0aW9uIHdyaXRlUmVzcG9uc2UobWVzc2FnZSwgY29udGVudCwgbGluaywgaW1hZ2VVcmwsIHJlcykgewogIC8vIHNldCByZXNwb25zZSBjb250ZW50CiAgcmVzLndyaXRlKGAKICAgICAgICAgICAgPCFET0NUWVBFIGh0bWw+CiAgICAgICAgICAgIDxodG1sPgogICAgICAgICAgICAgICAgPGhlYWQ+CiAgICAgICAgICAgICAgICAgICAgPG1ldGEgY2hhcnNldD0idXRmLTgiPgogICAgICAgICAgICAgICAgICAgIDx0aXRsZT5SZXNpbGllbmN5IFdvcmtzaG9wITwvdGl0bGU+CiAgICAgICAgICAgICAgICA8L2hlYWQ+CiAgICAgICAgICAgICAgICA8Ym9keT4KICAgICAgICAgICAgICAgICAgICA8aDE+V2VsY29tZSB0byB0aGUgUmVzaWxpZW5jeSBXb3Jrc2hvcCE8L2gxPgogICAgICAgICAgICAgICAgICAgIDxwPiR7bWVzc2FnZX08L3A+CiAgICAgICAgICAgICAgICAgICAgPHA+JHtjb250ZW50fTwvcD4KICAgICAgICAgICAgICAgICAgICA8cD48YSBocmVmPSIke2xpbmt9Ij5jbGljayBoZXJlIHRvIGdvIHRvIG90aGVyIHBhZ2U8L2E+PC9wPgogICAgICAgICAgICAgICAgICAgIDxpbWcgc3JjPSIke2ltYWdlVXJsfSIgYWx0PSIiIHdpZHRoPSI3MDAiPgogICAgICAgICAgICAgICAgPC9ib2R5PgogICAgICAgICAgICA8L2h0bWw+YCk7Cn0KCnZhciBzZXJ2ZXIgPSBodHRwLmNyZWF0ZVNlcnZlcihmdW5jdGlvbiAocmVxLCByZXMpIHsKICB2YXIgcnFzdElkID0gdXVpZHY0KCk7CiAgY29uc29sZS5sb2cobmV3IERhdGUoKSwgYGhhbmRsaW5nIHJlcXVlc3QgJHtycXN0SWR9IGZyb20gJHtyZXEuc29ja2V0LnJlbW90ZUFkZHJlc3N9IGZvciAke3JlcS51cmx9YCk7CgogIGlmIChyZXEudXJsID09ICIvIikgewogICAgdmFyIHdlYlNpdGVJbWFnZVVybCA9ICJodHRwczovL2F3cy13ZWxsLWFyY2hpdGVjdGVkLWxhYnMtb2hpby5zMy51cy1lYXN0LTIuYW1hem9uYXdzLmNvbS9pbWFnZXMvQ2lycXVlX29mX3RoZV9Ub3dlcnMuanBnIjsKICAgIG1lc3NhZ2UgPSBgRGF0YSBmcm9tIHRoZSBtZXRhZGF0YSBBUElgOwogICAgY29udGVudCA9IGAKICAgICAgYWNjb3VudElkOiAke21ldGFkYXRhLmFjY291bnRJZH08YnIvPgogICAgICBhbWlJZDogJHttZXRhZGF0YS5pbWFnZUlkfTxici8+CiAgICAgIGF2YWlsYWJpbGl0eVpvbmU6ICR7bWV0YWRhdGEuYXZhaWxhYmlsaXR5Wm9uZX08YnIvPgogICAgICBpbnN0YW5jZUlkOiAke21ldGFkYXRhLmluc3RhbmNlSWR9PGJyLz4KICAgICAgaW5zdGFuY2VUeXBlOiAke21ldGFkYXRhLmluc3RhbmNlVHlwZX08YnIvPgogICAgICBwcml2YXRlSG9zdG5hbWU6ICR7bWV0YWRhdGEucHJpdmF0ZUhvc3RuYW1lfTxici8+CiAgICAgIHByaXZhdGVJcDogJHttZXRhZGF0YS5wcml2YXRlSXB9PGJyLz4KICAgIGA7CgogICAgZGIucXVlcnkoIklOU0VSVCBJTlRPIGhpdHMoaXApIHZhbHVlcyAoPykiLCBbcmVxLnNvY2tldC5yZW1vdGVBZGRyZXNzXSwgZnVuY3Rpb24gKGVycm9yLCByZXN1bHRzLCBmaWVsZHMpIHsKICAgICAgaWYgKGVycm9yKSB0aHJvdyBlcnJvcjsKICAgIH0pOwoKICAgIC8vIHNldCByZXNwb25zZSBoZWFkZXIKICAgIHJlcy53cml0ZUhlYWQoMjAwLCB7ICJDb250ZW50LVR5cGUiOiAidGV4dC9odG1sIiB9KTsKCiAgICB3cml0ZVJlc3BvbnNlKG1lc3NhZ2UsIGNvbnRlbnQsICIvZGF0YSIsIHdlYlNpdGVJbWFnZVVybCwgcmVzKTsKCiAgICByZXMuZW5kKCk7CiAgfSBlbHNlCiAgICBpZiAocmVxLnVybCA9PSAiL2RhdGEiKSB7CiAgICAgIGNvbnNvbGUubG9nKG5ldyBEYXRlKCksIGByZXF1ZXN0ICR7cnFzdElkfSwgUHJvdmlkaW5nIGRldGFpbGVkIHJlc3BvbnNlYCk7CgogICAgICAvLyBzZXQgcmVzcG9uc2UgaGVhZGVyCiAgICAgIHJlcy53cml0ZUhlYWQoMjAwLCB7ICJDb250ZW50LVR5cGUiOiAidGV4dC9odG1sIiB9KTsKCiAgICAgIG1lc3NhZ2UgPSBgRGF0YSBmcm9tIHRoZSBkYXRhYmFzZWA7CgogICAgICBkYi5xdWVyeSgnU0VMRUNUICogRlJPTSBoaXRzIE9SREVSIEJZIHRpbWUgREVTQyBMSU1JVCAxMCcsIGZ1bmN0aW9uIChlcnJvciwgcmVzdWx0cywgZmllbGRzKSB7CiAgICAgICAgaWYgKGVycm9yKSB0aHJvdyBlcnJvcjsKICAgICAgICAvLyBjb25zb2xlLmxvZyAocmVzdWx0cyk7CiAgICAgICAgY29udGVudCA9ICcnOwogICAgICAgIE9iamVjdC5rZXlzKHJlc3VsdHMpLmZvckVhY2goZnVuY3Rpb24gKGtleSkgewogICAgICAgICAgdmFyIHJvdyA9IHJlc3VsdHNba2V5XTsKICAgICAgICAgIC8vIGNvbnNvbGUubG9nIChyb3cpOwogICAgICAgICAgY29udGVudCArPSAnaXAgPSAnICsgcm93LmlwICsgJyBcdCB0aW1lID0gJyArIHJvdy50aW1lICsgJzxici8+JzsKICAgICAgICB9KTsKCiAgICAgICAgd3JpdGVSZXNwb25zZShtZXNzYWdlLCBjb250ZW50LCAiLyIsICIiLCByZXMpOwogICAgICAgIHJlcy5lbmQoKTsKICAgICAgfSk7CgogICAgfSBlbHNlIHsKICAgICAgcmVzLmVuZCgiSW52YWxpZCBSZXF1ZXN0ISIpOwogICAgfQp9KTsKCnNlcnZlci5saXN0ZW4oU0VSVkVSX1BPUlQpOwoKY29uc29sZS5sb2cobmV3IERhdGUoKSwgYE5vZGUuanMgd2ViIHNlcnZlciBhdCBwb3J0ICR7U0VSVkVSX1BPUlR9IGlzIHJ1bm5pbmcuLmApOw==
 
   WebServerGroup:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
@@ -466,7 +539,7 @@ Resources:
             msiexec.exe /i 'C:\AWSCLI64.msi' /qn
             Invoke-WebRequest -Uri https://nodejs.org/dist/v16.13.1/node-v16.13.1-win-x64.zip -UseBasicParsing -OutFile c:\users\administrator\nodejs.zip
             Expand-Archive -LiteralPath c:\users\administrator\nodejs.zip -DestinationPath c:\users\administrator
-            c:\users\administrator\node-v16.13.1-win-x64\npm install mysql aws-sdk uuid
+            c:\users\administrator\node-v16.13.1-win-x64\npm install --prefix c:\users\administrator mysql aws-sdk uuid command-line-args
             Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
             @"
             CREATE DATABASE IF NOT EXISTS iptracker;
@@ -479,111 +552,8 @@ Resources:
             GRANT ALL PRIVILEGES ON awsdms_control.* TO 'admin'@'%';
             "@ | out-file -encoding ASCII c:\createIPTable.sql
             cat c:\createIPTable.sql | mysql -h ${MySQLDatabase.Endpoint.Address} -u ${DBUser} --password=${DBPassword} --silent --force -b >mysql-stderr.txt
-            @"
-            var http = require("http");
-            var mysql = require('mysql');
-            var AWS = require('aws-sdk');
-            const { v4: uuidv4 } = require('uuid');
-
-            var db = mysql.createConnection({
-              host: 'hm1gsu8jb9nqdvg.ckqc4dnfzj72.eu-west-2.rds.amazonaws.com',
-              user: 'admin',
-              password: 'DbPassword',
-              database: 'iptracker'
-            });
-
-            db.connect();
-
-            var SERVER_PORT = 8080;
-
-            var metadata = {};
-            var META = new AWS.MetadataService();
-            META.request('/latest/dynamic/instance-identity/document', function (err, data) {
-              metadata = JSON.parse(data);
-              META.request('/latest/meta-data/local-hostname', function (err, data) {
-                metadata['privateHostname'] = data;
-              });
-            });
-
-            function writeResponse(message, content, link, imageUrl, res) {
-              // set response content
-              res.write(`
-                        <!DOCTYPE html>
-                        <html>
-                            <head>
-                                <meta charset="utf-8">
-                                <title>Resiliency Workshop!</title>
-                            </head>
-                            <body>
-                                <h1>Welcome to the Resiliency Workshop!</h1>
-                                <p>${message}</p>
-                                <p>${content}</p>
-                                <p><a href="${link}">click here to go to other page</a></p>
-                                <img src="${imageUrl}" alt="" width="700">
-                            </body>
-                        </html>`);
-            }
-
-            var server = http.createServer(function (req, res) {
-              var rqstId = uuidv4();
-              console.log(new Date(), `handling request ${rqstId} from ${req.socket.remoteAddress} for ${req.url}`);
-
-              if (req.url == "/") {
-                var webSiteImageUrl = "https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg";
-                message = `Data from the metadata API`;
-                content = `
-                  accountId: ${metadata.accountId}<br/>
-                  amiId: ${metadata.imageId}<br/>
-                  availabilityZone: ${metadata.availabilityZone}<br/>
-                  instanceId: ${metadata.instanceId}<br/>
-                  instanceType: ${metadata.instanceType}<br/>
-                  privateHostname: ${metadata.privateHostname}<br/>
-                  privateIp: ${metadata.privateIp}<br/>
-                `;
-
-                db.query("INSERT INTO hits(ip) values (?)", [req.socket.remoteAddress], function (error, results, fields) {
-                  if (error) throw error;
-                });
-
-                // set response header
-                res.writeHead(200, { "Content-Type": "text/html" });
-
-                writeResponse(message, content, "/data", webSiteImageUrl, res);
-
-                res.end();
-              } else
-                if (req.url == "/data") {
-                  console.log(new Date(), `request ${rqstId}, Providing detailed response`);
-
-                  // set response header
-                  res.writeHead(200, { "Content-Type": "text/html" });
-
-                  message = `Data from the database`;
-
-                  db.query('SELECT * FROM hits ORDER BY time DESC LIMIT 10', function (error, results, fields) {
-                    if (error) throw error;
-                    // console.log (results);
-                    content = '';
-                    Object.keys(results).forEach(function (key) {
-                      var row = results[key];
-                      // console.log (row);
-                      content += 'ip = ' + row.ip + ' \t time = ' + row.time + '<br/>';
-                    });
-
-                    writeResponse(message, content, "/", "", res);
-                    res.end();
-                  });
-
-                } else {
-                  res.end("Invalid Request!");
-                }
-            });
-
-            server.listen(SERVER_PORT);
-
-            console.log(new Date(), `Node.js web server at port ${SERVER_PORT} is running..`);
-            "@ | out-file -encoding ASCII c:\users\administrator\server.js
-            Start-Process -WorkingDirectory c:\users\administrator -RedirectStandardOutput c:\users\administrator\server-output.log -RedirectStandardError c:\users\administrator\server-error.log c:\users\administrator\node-v16.13.1-win-x64\node { c:\users\administrator\server.js -u https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg -p 80 -s ${DBUser} -w ${DBPassword} -d iptracker -o ${MySQLDatabase.Endpoint.Address}}
+            & 'C:\Program Files\Amazon\AWSCLI\bin\aws' s3 cp s3://${S3Bucket}/app-server.js c:\users\administrator\server.js
+            Start-Process -WorkingDirectory c:\users\administrator -RedirectStandardOutput c:\users\administrator\server-output.log -RedirectStandardError c:\users\administrator\server-error.log c:\users\administrator\node-v16.13.1-win-x64\node { c:\users\administrator\server.js -p 80 -u ${DBUser} -s ${DBPassword} -d iptracker -h ${MySQLDatabase.Endpoint.Address}}
             # cfn-signal.exe -e $LASTEXITCODE --stack ${AWS::StackId} --resource WebServerGroup --region ${AWS::Region}
             </powershell>
             <persist>false</persist>

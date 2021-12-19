@@ -2,17 +2,28 @@ var http = require("http");
 var mysql = require('mysql');
 var AWS = require('aws-sdk');
 const { v4: uuidv4 } = require('uuid');
+const commandLineArgs = require('command-line-args');
+
+const optionDefinitions = [
+  { name: 'port', alias: 'p', type: Number, defaultOption: 80},
+  { name: 'dbhost', alias: 'h', type: String},
+  { name: 'dbuser', alias: 'u', type: String},
+  { name: 'dbpass', alias: 's', type: String},
+  { name: 'dbname', alias: 'd', type: String}
+]
+const options = commandLineArgs(optionDefinitions);
+console.log(options);
 
 var db = mysql.createConnection({
-  host: 'hm1gsu8jb9nqdvg.ckqc4dnfzj72.eu-west-2.rds.amazonaws.com',
-  user: 'admin',
-  password: 'DbPassword',
-  database: 'iptracker'
+  host: options.dbhost,
+  user: options.dbuser,
+  password: options.dbpass,
+  database: options.dbname
 });
 
 db.connect();
 
-var SERVER_PORT = 8080;
+var SERVER_PORT = options.port;
 
 var metadata = {};
 var META = new AWS.MetadataService();
