@@ -51,7 +51,7 @@ function mainThread() {
     var rqstId = uuidv4();
     console.log(new Date(), `handling request ${rqstId} from ${req.socket.remoteAddress} for ${req.url}`);
 
-    doBusyWork(6);
+    // doBusyWork(4);
 
     if (req.url == "/") {
       var webSiteImageUrl = "https://aws-well-architected-labs-ohio.s3.us-east-2.amazonaws.com/images/Cirque_of_the_Towers.jpg";
